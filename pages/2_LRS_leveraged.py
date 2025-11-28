@@ -21,7 +21,7 @@ else:
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 st.set_page_config(page_title="台股 LRS 回測系統", page_icon="📈", layout="wide")
-st.markdown("<h1 style='margin-bottom:0.5em;'>📊 台股 LRS 槓桿策略回測</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='margin-bottom:0.5em;'>📊 0050 LRS 槓桿策略回測</h1>", unsafe_allow_html=True)
 
 st.markdown(
     """
