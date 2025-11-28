@@ -38,7 +38,7 @@ with right:
     st.markdown(
         "在策略頁面中可設定回測區間、本金與參數，並觀看圖表與績效指標。"
     )
-    st.page_link(info["page"], label="前往策略頁面", icon="➡️")
+    
 
 st.divider()
 st.markdown(
