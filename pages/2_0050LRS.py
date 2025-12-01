@@ -1,5 +1,5 @@
 ###############################################################
-# 0050LRS 回測（auto_adjust 版本）
+# 0050LRS 回測（0050 / 006208 + 正2 槓桿 ETF）auto_adjust版本
 ###############################################################
 
 import os
@@ -10,8 +10,7 @@ import streamlit as st
 import matplotlib
 import matplotlib.font_manager as fm
 import plotly.graph_objects as go
-
-import yfinance as yf   # 直接改用 auto_adjust 下載
+import yfinance as yf
 
 ###############################################################
 # 字型設定
@@ -30,69 +29,56 @@ else:
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 ###############################################################
-# Streamlit 頁面設定
+# Streamlit 設定
 ###############################################################
 
-st.set_page_config(
-    page_title="0050LRS 回測系統（auto_adjust）",
-    page_icon="📈",
-    layout="wide",
-)
+st.set_page_config(page_title="0050LRS 回測系統（auto_adjust）", page_icon="📈", layout="wide")
 st.markdown("<h1>📊 0050LRS 槓桿策略回測（auto_adjust）</h1>", unsafe_allow_html=True)
 
 ###############################################################
-# ETF 清單（無 .TW，UI 更乾淨）
+# ETF 選單（UI 顯示乾淨版本）
 ###############################################################
 
-BASE_LIST = ["0050", "006208"]
-LEV_LIST = ["00631L", "00663L", "00675L", "00685L"]
+BASE_DISPLAY = ["0050", "006208"]
+LEV_DISPLAY = ["00631L", "00663L", "00675L", "00685L"]
 
-def to_symbol(x):
-    """UI: 0050 → yfinance: 0050.TW"""
+def to_symbol(x):  
     return f"{x}.TW"
 
 ###############################################################
-# UI
+# UI：選擇原型 / 槓桿 ETF
 ###############################################################
 
 col1, col2 = st.columns(2)
 
 with col1:
-    base_display = st.selectbox("原型 ETF（訊號來源）", BASE_LIST)
+    base_display = st.selectbox("原型 ETF（訊號來源）", BASE_DISPLAY)
     base_symbol = to_symbol(base_display)
 
 with col2:
-    lev_display = st.selectbox("槓桿 ETF（實際進出場標的）", LEV_LIST)
+    lev_display = st.selectbox("槓桿 ETF（出場標的）", LEV_DISPLAY)
     lev_symbol = to_symbol(lev_display)
 
 st.markdown(f"### 使用原型：{base_display}　槓桿：{lev_display}")
 
 ###############################################################
-# 自動下載（auto_adjust）
+# 自動下載（使用 auto_adjust=True）
 ###############################################################
 
 @st.cache_data
-def load_yf_price(symbol: str) -> pd.DataFrame:
-    """
-    下載自動調整後價格（內含股息/拆股調整）
-    """
+def load_yf(symbol):
     df = yf.download(symbol, auto_adjust=True)
     if df.empty:
-        raise ValueError(f"⚠️ 無法下載 {symbol}")
-    df = df[["Close"]]  # 使用調整後收盤價
+        st.error(f"⚠️ yfinance 無法下載：{symbol}")
+        st.stop()
     df = df.rename(columns={"Close": "Price"})
-    return df
+    return df[["Price"]]
 
-# 下載資料
-try:
-    df_base = load_yf_price(base_symbol)
-    df_lev = load_yf_price(lev_symbol)
-except Exception as e:
-    st.error(str(e))
-    st.stop()
+df_base = load_yf(base_symbol)
+df_lev = load_yf(lev_symbol)
 
 ###############################################################
-# 合併資料
+# 合併資料（以原型 ETF 時間為基準）
 ###############################################################
 
 df = pd.DataFrame(index=df_base.index)
@@ -109,51 +95,43 @@ available_end = df.index.max().date()
 st.info(f"📌 可回測區間：{available_start} ~ {available_end}")
 
 col3, col4, col5 = st.columns(3)
-
 with col3:
-    default_start = max(available_start, available_end - dt.timedelta(days=5*365))
+    default_start = max(available_start, available_end - dt.timedelta(days=365 * 5))
     start = st.date_input("開始日期", value=default_start,
                           min_value=available_start, max_value=available_end)
-
 with col4:
     end = st.date_input("結束日期", value=available_end,
                         min_value=available_start, max_value=available_end)
-
 with col5:
-    capital = st.number_input("投入本金（元）", 1000, 5_000_000, 100_000, step=10_000)
+    capital = st.number_input("投入本金", 1000, 5_000_000, 100_000, step=10_000)
 
-position_mode = st.radio("策略初始狀態", ["空手起跑（標準 LRS）", "一開始就全倉槓桿 ETF"])
+position_mode = st.radio("策略初始狀態", ["空手起跑（標準 LRS）", "起跑就進場"])
 
 ###############################################################
-# 主回測（按下按鈕）
+# 回測按鈕
 ###############################################################
 
 if st.button("開始回測 🚀"):
 
-    if start >= end:
-        st.error("⚠️ 開始日期需小於結束日期")
-        st.stop()
-
     df = df.loc[pd.to_datetime(start): pd.to_datetime(end)].copy()
 
-    # 計算 200SMA（來自原型 ETF）
+    ###############################################################
+    # 計算 200SMA
+    ###############################################################
+
     df["MA_200"] = df["Price_base"].rolling(200).mean()
     df = df.dropna(subset=["MA_200"])
 
-    if df.empty:
-        st.error("⚠️ 沒有足夠資料計算 200SMA")
-        st.stop()
-
     ###############################################################
-    # 訊號產生（原型 ETF）
+    # 產生訊號：原型 ETF 觸發訊號
     ###############################################################
-
-    df["Price_base_shift"] = df["Price_base"].shift(1)
-    df["MA_shift"] = df["MA_200"].shift(1)
 
     df["Signal"] = 0
-    df.loc[(df["Price_base"] > df["MA_200"]) & (df["Price_base_shift"] <= df["MA_shift"]), "Signal"] = 1
-    df.loc[(df["Price_base"] < df["MA_200"]) & (df["Price_base_shift"] >= df["MA_shift"]), "Signal"] = -1
+    df["base_shift"] = df["Price_base"].shift(1)
+    df["ma_shift"] = df["MA_200"].shift(1)
+
+    df.loc[(df["Price_base"] > df["MA_200"]) & (df["base_shift"] <= df["ma_shift"]), "Signal"] = 1  # 金叉
+    df.loc[(df["Price_base"] < df["MA_200"]) & (df["base_shift"] >= df["ma_shift"]), "Signal"] = -1  # 死叉
 
     # 初始持倉
     if "空手" in position_mode:
@@ -162,7 +140,6 @@ if st.button("開始回測 🚀"):
         pos = 1
 
     positions = [pos]
-
     for sig in df["Signal"].iloc[1:]:
         if sig == 1:
             pos = 1
@@ -173,26 +150,27 @@ if st.button("開始回測 🚀"):
     df["Position"] = positions
 
     ###############################################################
-    # 報酬計算（槓桿 ETF）
+    # 報酬計算（槓桿 ETF 實際進出）
     ###############################################################
 
-    df["Ret_lev"] = df["Price_lev"].pct_change().fillna(0)
+    df["Return_lev"] = df["Price_lev"].pct_change().fillna(0)
 
     equity = [1.0]
     for i in range(1, len(df)):
         if df["Position"].iloc[i] == 1:
-            equity.append(equity[-1] * (1 + df["Ret_lev"].iloc[i]))
+            equity.append(equity[-1] * (1 + df["Return_lev"].iloc[i]))
         else:
             equity.append(equity[-1])
     df["Equity_LRS"] = equity
 
-    df["Equity_BH_Base"] = (df["Price_base"] / df["Price_base"].iloc[0])
-    df["Equity_BH_Lev"] = (df["Price_lev"] / df["Price_lev"].iloc[0])
+    df["Equity_BH_Base"] = df["Price_base"] / df["Price_base"].iloc[0]
+    df["Equity_BH_Lev"] = df["Price_lev"] / df["Price_lev"].iloc[0]
 
     ###############################################################
-    # 三策略比較圖
+    # 三策略資金曲線圖
     ###############################################################
 
+    st.subheader("📈 三策略資金曲線")
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df["Equity_LRS"], name="LRS"))
     fig.add_trace(go.Scatter(x=df.index, y=df["Equity_BH_Lev"], name=f"{lev_display} BH"))
@@ -201,11 +179,11 @@ if st.button("開始回測 🚀"):
     st.plotly_chart(fig, use_container_width=True)
 
     ###############################################################
-    # 最終數字
+    # 總結數字
     ###############################################################
 
-    st.subheader("📌 回測結果")
+    st.subheader("📘 回測總結")
 
-    st.write(f"🔹 LRS 最終資產：{equity[-1] * capital:,.0f} 元")
-    st.write(f"🔹 槓桿 BH：{df['Equity_BH_Lev'].iloc[-1] * capital:,.0f} 元")
-    st.write(f"🔹 原型 BH：{df['Equity_BH_Base'].iloc[-1] * capital:,.0f} 元")
+    st.write(f"🔹 **LRS 最終資產：{df['Equity_LRS'].iloc[-1] * capital:,.0f} 元**")
+    st.write(f"🔹 **槓桿 BH：{df['Equity_BH_Lev'].iloc[-1] * capital:,.0f} 元**")
+    st.write(f"🔹 **原型 BH：{df['Equity_BH_Base'].iloc[-1] * capital:,.0f} 元**")
