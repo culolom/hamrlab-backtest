@@ -1,11 +1,10 @@
 """
-Auto-update price CSVs (append-only, very fast)
+Auto-update adjusted-price CSVs (append-only, clean for backtesting)
 - Reads symbols.txt automatically
-- CSV schema: Open, High, Low, Close, Volume
+- CSV schema: Date, Close, Volume  (Close = adjusted price)
 - First-time fetch: full history (period='max')
 - Daily updates: append missing dates only
 - Designed for GitHub Actions automation
-- auto_adjust=True 以避免台股槓桿 ETF 拆股問題
 """
 
 from __future__ import annotations
@@ -22,12 +21,12 @@ import yfinance as yf
 # -----------------------------------------------------
 DATA_DIR = Path("data")
 SYMBOLS_FILE = Path("symbols.txt")
-REQUIRED_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 
 
 # -----------------------------------------------------
 # Normalize symbol
-#   台股：0050, 2330, 00878, 00631L → 補 .TW
+#   - 台股：0050, 2330, 00878, 00631L → 加上 .TW
+#   - 其它（QQQ, SPY...）維持不變
 # -----------------------------------------------------
 def normalize_symbol(sym: str) -> str:
     s = sym.strip().upper()
@@ -38,7 +37,7 @@ def normalize_symbol(sym: str) -> str:
     if re.match(r"^\d+[A-Z]*$", s):
         return s + ".TW"
 
-    return s  # 美股等其他市場
+    return s
 
 
 # -----------------------------------------------------
@@ -51,14 +50,15 @@ def load_existing(symbol: str) -> pd.DataFrame | None:
 
     try:
         df = pd.read_csv(path, parse_dates=["Date"], index_col="Date")
-        return df.sort_index()
+        df = df.sort_index()
+        return df
     except Exception:
         print(f"⚠ CSV corrupted for {symbol}, rebuilding...")
         return None
 
 
 # -----------------------------------------------------
-# Download missing rows (auto_adjust=True)
+# Download new rows using adjusted price
 # -----------------------------------------------------
 def download_new_rows(symbol: str, start_date: datetime) -> pd.DataFrame:
     end_date = datetime.today() + timedelta(days=1)
@@ -69,18 +69,17 @@ def download_new_rows(symbol: str, start_date: datetime) -> pd.DataFrame:
         symbol,
         start=start_date.strftime("%Y-%m-%d"),
         end=end_date.strftime("%Y-%m-%d"),
-        auto_adjust=True,         # <<< 最關鍵：處理拆股/合股
+        auto_adjust=True,        # ← 使用調整後價格！
         progress=False,
     )
 
     if df.empty:
         return df
 
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    df = df[REQUIRED_COLUMNS].copy()
+    # 保留需要的欄位（Close ＝ 已調整後價格）
+    df = df[["Close", "Volume"]].copy()
     df.index.name = "Date"
+
     return df
 
 
@@ -88,13 +87,12 @@ def download_new_rows(symbol: str, start_date: datetime) -> pd.DataFrame:
 # Update single symbol CSV
 # -----------------------------------------------------
 def update_symbol(symbol: str):
-
     DATA_DIR.mkdir(exist_ok=True)
 
     existing = load_existing(symbol)
 
     # -------------------------------------------------
-    # First-time download → FULL history
+    # First-time download
     # -------------------------------------------------
     if existing is None:
         print(f"📦 No CSV found for {symbol}, downloading FULL history...")
@@ -102,7 +100,7 @@ def update_symbol(symbol: str):
         df = yf.download(
             symbol,
             period="max",
-            auto_adjust=True,      # <<< 重要：全歷史自動調整
+            auto_adjust=True,      # ← 使用調整後價格
             progress=False,
         )
 
@@ -110,10 +108,7 @@ def update_symbol(symbol: str):
             print(f"❌ FAILED: no data for {symbol}")
             return
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        df = df[REQUIRED_COLUMNS]
+        df = df[["Close", "Volume"]]
         df.index.name = "Date"
         df.to_csv(DATA_DIR / f"{symbol}.csv")
 
@@ -121,7 +116,7 @@ def update_symbol(symbol: str):
         return
 
     # -------------------------------------------------
-    # Append new rows
+    # Append new data
     # -------------------------------------------------
     last_date = existing.index.max()
     fetch_from = last_date + timedelta(days=1)
@@ -139,7 +134,8 @@ def update_symbol(symbol: str):
         return
 
     merged = pd.concat([existing, new_rows])
-    merged = merged[~merged.index.duplicated(keep="last")].sort_index()
+    merged = merged[~merged.index.duplicated(keep="last")]
+    merged = merged.sort_index()
 
     merged.to_csv(DATA_DIR / f"{symbol}.csv")
 
@@ -151,7 +147,7 @@ def update_symbol(symbol: str):
 # -----------------------------------------------------
 def load_symbols() -> list[str]:
     if not SYMBOLS_FILE.exists():
-        raise FileNotFoundError("❌ symbols.txt not found!")
+        raise FileNotFoundError("❌ symbols.txt not found! Place it in repo root.")
 
     with open(SYMBOLS_FILE, "r", encoding="utf-8") as f:
         raw = [
