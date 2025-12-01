@@ -5,6 +5,7 @@ Auto-update price CSVs (append-only, very fast)
 - First-time fetch: full history (period='max')
 - Daily updates: append missing dates only
 - Designed for GitHub Actions automation
+- auto_adjust=True 以避免台股槓桿 ETF 拆股問題
 """
 
 from __future__ import annotations
@@ -26,22 +27,18 @@ REQUIRED_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 
 # -----------------------------------------------------
 # Normalize symbol
-#   - 台股：0050, 2330, 00878, 00631L → 加上 .TW
-#   - 其它（QQQ, SPY...）維持不變
+#   台股：0050, 2330, 00878, 00631L → 補 .TW
 # -----------------------------------------------------
 def normalize_symbol(sym: str) -> str:
     s = sym.strip().upper()
 
-    # 已經有 .TW → 不動
     if s.endswith(".TW"):
         return s
 
-    # 純數字或「數字+字母」視為台股，補 .TW
     if re.match(r"^\d+[A-Z]*$", s):
         return s + ".TW"
 
-    # 其它當海外商品
-    return s
+    return s  # 美股等其他市場
 
 
 # -----------------------------------------------------
@@ -54,15 +51,14 @@ def load_existing(symbol: str) -> pd.DataFrame | None:
 
     try:
         df = pd.read_csv(path, parse_dates=["Date"], index_col="Date")
-        df = df.sort_index()
-        return df
+        return df.sort_index()
     except Exception:
         print(f"⚠ CSV corrupted for {symbol}, rebuilding...")
         return None
 
 
 # -----------------------------------------------------
-# Download missing rows only
+# Download missing rows (auto_adjust=True)
 # -----------------------------------------------------
 def download_new_rows(symbol: str, start_date: datetime) -> pd.DataFrame:
     end_date = datetime.today() + timedelta(days=1)
@@ -73,7 +69,7 @@ def download_new_rows(symbol: str, start_date: datetime) -> pd.DataFrame:
         symbol,
         start=start_date.strftime("%Y-%m-%d"),
         end=end_date.strftime("%Y-%m-%d"),
-        auto_adjust=False,
+        auto_adjust=True,         # <<< 最關鍵：處理拆股/合股
         progress=False,
     )
 
@@ -92,23 +88,21 @@ def download_new_rows(symbol: str, start_date: datetime) -> pd.DataFrame:
 # Update single symbol CSV
 # -----------------------------------------------------
 def update_symbol(symbol: str):
-    """
-    symbol: 已經 normalize 過的（例如 0050.TW）
-    """
+
     DATA_DIR.mkdir(exist_ok=True)
 
     existing = load_existing(symbol)
 
     # -------------------------------------------------
-    # First-time download: full history
+    # First-time download → FULL history
     # -------------------------------------------------
     if existing is None:
         print(f"📦 No CSV found for {symbol}, downloading FULL history...")
 
         df = yf.download(
             symbol,
-            period="max",          # 抓到 yfinance 能提供的最長歷史
-            auto_adjust=False,
+            period="max",
+            auto_adjust=True,      # <<< 重要：全歷史自動調整
             progress=False,
         )
 
@@ -127,14 +121,13 @@ def update_symbol(symbol: str):
         return
 
     # -------------------------------------------------
-    # Append new data
+    # Append new rows
     # -------------------------------------------------
     last_date = existing.index.max()
     fetch_from = last_date + timedelta(days=1)
 
     print(f"📄 Existing CSV for {symbol}: last date = {last_date.date()}")
 
-    # 已經更新到今天之後，就不用再抓
     if fetch_from.date() > datetime.today().date():
         print(f"⏭ {symbol} already up-to-date")
         return
@@ -146,8 +139,7 @@ def update_symbol(symbol: str):
         return
 
     merged = pd.concat([existing, new_rows])
-    merged = merged[~merged.index.duplicated(keep="last")]
-    merged = merged.sort_index()
+    merged = merged[~merged.index.duplicated(keep="last")].sort_index()
 
     merged.to_csv(DATA_DIR / f"{symbol}.csv")
 
@@ -159,7 +151,7 @@ def update_symbol(symbol: str):
 # -----------------------------------------------------
 def load_symbols() -> list[str]:
     if not SYMBOLS_FILE.exists():
-        raise FileNotFoundError("❌ symbols.txt not found! Place it in repo root.")
+        raise FileNotFoundError("❌ symbols.txt not found!")
 
     with open(SYMBOLS_FILE, "r", encoding="utf-8") as f:
         raw = [
