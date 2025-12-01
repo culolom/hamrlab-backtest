@@ -2,50 +2,27 @@
 Auto-update price CSVs (append-only, very fast)
 - Reads symbols.txt automatically
 - CSV schema: Open, High, Low, Close, Volume
-- Appends only missing dates (no full re-download)
-- Perfect for GitHub Actions daily updates
+- First-time fetch: full history (period='max')
+- Daily updates: append missing dates only
+- Designed for GitHub Actions automation
 """
 
 from __future__ import annotations
 from pathlib import Path
 from datetime import datetime, timedelta
-import re
 
 import pandas as pd
 import yfinance as yf
 
 
-# -------------------------------
-# Paths & Config
-# -------------------------------
 DATA_DIR = Path("data")
 SYMBOLS_FILE = Path("symbols.txt")
 REQUIRED_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 
 
-# -------------------------------
-# Normalize Symbols
-#  - 台股自動補 .TW
-#  - 美股不影響
-# -------------------------------
-def normalize_symbol(sym: str) -> str:
-    s = sym.strip().upper()
-
-    # 原本就有 .TW 不動
-    if s.endswith(".TW"):
-        return s
-
-    # 台股格式：純數字 / 數字+字母（像 00631L）
-    if re.match(r"^\d+[A-Z]*$", s):
-        return s + ".TW"
-
-    # 美股代碼不變
-    return s
-
-
-# -------------------------------
+# -----------------------------------------------------
 # Load existing CSV
-# -------------------------------
+# -----------------------------------------------------
 def load_existing(symbol: str) -> pd.DataFrame | None:
     path = DATA_DIR / f"{symbol}.csv"
     if not path.exists():
@@ -60,13 +37,13 @@ def load_existing(symbol: str) -> pd.DataFrame | None:
         return None
 
 
-# -------------------------------
-# Download only missing rows
-# -------------------------------
+# -----------------------------------------------------
+# Download missing rows only
+# -----------------------------------------------------
 def download_new_rows(symbol: str, start_date: datetime) -> pd.DataFrame:
     end_date = datetime.today() + timedelta(days=1)
 
-    print(f"⬇ Downloading {symbol} from {start_date.date()} → {end_date.date()}")
+    print(f"⬇ Downloading {symbol}: {start_date.date()} → {end_date.date()}")
 
     df = yf.download(
         symbol,
@@ -87,19 +64,27 @@ def download_new_rows(symbol: str, start_date: datetime) -> pd.DataFrame:
     return df
 
 
-# -------------------------------
-# Update a single symbol
-# -------------------------------
+# -----------------------------------------------------
+# Update single symbol CSV
+# -----------------------------------------------------
 def update_symbol(symbol: str):
     DATA_DIR.mkdir(exist_ok=True)
 
     existing = load_existing(symbol)
 
-    # First-time download
+    # -------------------------------------------------
+    # First-time download: full history
+    # -------------------------------------------------
     if existing is None:
-        print(f"📦 No CSV for {symbol}, downloading full history...")
+        print(f"📦 No CSV found for {symbol}, downloading FULL history...")
 
-        df = yf.download(symbol, auto_adjust=False, progress=False)
+        df = yf.download(
+            symbol,
+            period="max",          # ⬅⬅ 抓完整歷史資料
+            auto_adjust=False,
+            progress=False,
+        )
+
         if df.empty:
             print(f"❌ FAILED: no data for {symbol}")
             return
@@ -111,15 +96,18 @@ def update_symbol(symbol: str):
         df.index.name = "Date"
         df.to_csv(DATA_DIR / f"{symbol}.csv")
 
-        print(f"✅ Created full CSV for {symbol} ({len(df)} rows)")
+        print(f"✅ Saved fresh CSV for {symbol} ({len(df)} rows)")
         return
 
-    # Append missing days
+    # -------------------------------------------------
+    # Append new data
+    # -------------------------------------------------
     last_date = existing.index.max()
     fetch_from = last_date + timedelta(days=1)
 
-    print(f"📄 Existing {symbol}: last date = {last_date.date()}")
+    print(f"📄 Existing CSV for {symbol}: last date = {last_date.date()}")
 
+    # Already up-to-date
     if fetch_from.date() > datetime.today().date():
         print(f"⏭ {symbol} already up-to-date")
         return
@@ -139,33 +127,35 @@ def update_symbol(symbol: str):
     print(f"✅ Updated {symbol}: +{len(new_rows)} rows")
 
 
-# -------------------------------
-# Read symbols.txt automatically
-# -------------------------------
+# -----------------------------------------------------
+# Read symbols.txt
+# -----------------------------------------------------
 def load_symbols() -> list[str]:
     if not SYMBOLS_FILE.exists():
-        raise FileNotFoundError("❌ symbols.txt not found!")
+        raise FileNotFoundError("❌ symbols.txt not found! Place it in repo root.")
 
     with open(SYMBOLS_FILE, "r", encoding="utf-8") as f:
-        symbols_raw = [
+        symbols = [
             line.strip()
             for line in f.readlines()
             if line.strip() and not line.startswith("#")
         ]
 
-    symbols = [normalize_symbol(s) for s in symbols_raw]
-
     print(f"📘 Loaded {len(symbols)} symbols from symbols.txt")
     return symbols
 
 
-# -------------------------------
+# -----------------------------------------------------
 # Entry point
-# -------------------------------
+# -----------------------------------------------------
 def main():
     symbols = load_symbols()
+
     for sym in symbols:
-        print(f"\n=== Processing {sym} ===")
+        print(f"\n==============================")
+        print(f"     Processing {sym}")
+        print(f"==============================")
+
         try:
             update_symbol(sym)
         except Exception as e:
