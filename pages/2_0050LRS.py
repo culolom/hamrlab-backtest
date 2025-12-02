@@ -477,53 +477,50 @@ if st.button("開始回測 🚀"):
         **{"font-weight": "bold", "color": "#2c7be5"}
     )
     
-    # --- Heatmap（最穩定寫法：逐欄上色）---
+    # --- Heatmap 欄位 ---
+    heat_cols = [
+        "期末資產", "總報酬率", "CAGR（年化）", "Calmar Ratio",
+        "最大回撤（MDD）", "年化波動", "Sharpe", "Sortino"
+    ]
+    
+    # --- 逐欄 Heatmap（最穩定版本）---
     from matplotlib import cm
     
     def colormap(series, cmap_name="RdYlGn"):
         """把數字欄轉成 0~1，再映射到顏色"""
         s = series.astype(float).fillna(0.0)
         if s.max() - s.min() < 1e-9:
-            norm = (s - s.min())  # 避免除以 0
+            norm = (s - s.min())
         else:
             norm = (s - s.min()) / (s.max() - s.min())
         cmap = cm.get_cmap(cmap_name)
         return norm.map(lambda x: f"background-color: rgba{cmap(x)}")
     
-    styled = formatted.style
-    
-    # 置中樣式
-    styled = styled.set_properties(**{"text-align": "center"})
-    styled = styled.set_properties(
-        subset=["策略"],
-        **{"font-weight": "bold", "color": "#2c7be5"}
-    )
-    
-    # --- 套用每一欄 heatmap ---
+    # 套用在 styled（這裡 styled 來自 formatted.style）
     for col in heat_cols:
         styled = styled.apply(lambda s: colormap(raw_table[col]), subset=[col])
     
-    # --- Hover 效果 + 隱藏 index ---
+    # --- Hover、對齊、隱藏 index ---
     styled = styled.set_table_styles([
         {"selector": "tbody tr:hover", "props": [("background-color", "#f0f8ff")]},
         {"selector": "th", "props": [("text-align", "center")]},
     ])
+    
     styled = styled.hide(axis="index")
     
     st.write(styled.to_html(), unsafe_allow_html=True)
     
-
-    
-    # --- Hover 效果 ---
-    styled = styled.set_table_styles([
-        {"selector": "tbody tr:hover", "props": [("background-color", "#f0f8ff")]},
-        {"selector": "th", "props": [("text-align", "center")]}
-    ])
-    
-    # --- 隱藏 index ---
-    styled = styled.hide(axis="index")
-    
-    st.write(styled.to_html(), unsafe_allow_html=True)
+        
+        # --- Hover 效果 ---
+        styled = styled.set_table_styles([
+            {"selector": "tbody tr:hover", "props": [("background-color", "#f0f8ff")]},
+            {"selector": "th", "props": [("text-align", "center")]}
+        ])
+        
+        # --- 隱藏 index ---
+        styled = styled.hide(axis="index")
+        
+        st.write(styled.to_html(), unsafe_allow_html=True)
     
 
     ###############################################################
