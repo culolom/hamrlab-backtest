@@ -15,7 +15,8 @@ st.set_page_config(
 
 # 2. 側邊欄：品牌與外部連結
 with st.sidebar:
-    st.image("https://hamr-lab.com/wp-content/uploads/2025/01/cropped-hamr-logo.png", width=100) # 建議換成您網站的 Logo URL 或本地路徑
+    # 如果您的 Logo 連結失效，可以換成您網站上的圖片網址
+    st.image("https://hamr-lab.com/wp-content/uploads/2025/01/cropped-hamr-logo.png", width=100) 
     st.title("🐹 倉鼠實驗室")
     st.caption("v1.0.0 Beta | 白銀會員限定")
     
@@ -39,13 +40,14 @@ st.markdown("""
 st.divider()
 
 # 4. 策略定義 (資料結構)
+# ✅ 修正重點：這裡的路徑已經更新為您截圖中的實際檔名
 strategies = [
     {
         "name": "200SMA 趨勢策略 (基礎版)",
         "icon": "📈",
         "description": "經典的趨勢跟隨策略。使用 200 日移動平均線 (SMA) 判斷牛熊分界，適合用來測試大盤指數的長期持有績效。",
         "tags": ["趨勢", "均線", "長期"],
-        "page_path": "pages/1_200SMA_basic.py", 
+        "page_path": "pages/1_200SMA_basic.py",  # 對應檔案：pages/1_200SMA_basic.py
         "btn_label": "進入 SMA 回測"
     },
     {
@@ -53,7 +55,7 @@ strategies = [
         "icon": "⚡",
         "description": "進階的資金控管策略。以 0050/006208 為訊號，動態調整正2槓桿 ETF 的曝險比例，追求比大盤更高的報酬風險比。",
         "tags": ["槓桿", "動態調整", "波段"],
-        "page_path": "pages/2_LRS_leveraged.py",
+        "page_path": "pages/2_0050LRS.py",       # ✅ 已修正：對應檔案 pages/2_0050LRS.py
         "btn_label": "進入 LRS 回測"
     },
 ]
@@ -61,7 +63,7 @@ strategies = [
 # 5. 策略展示區 (卡片式佈局)
 st.subheader("🛠️ 選擇你的實驗策略")
 
-# 使用 columns 排版，每行放 2 個策略，看起來比較不擁擠
+# 使用 columns 排版，每行放 2 個策略
 cols = st.columns(2)
 
 for index, strategy in enumerate(strategies):
@@ -83,7 +85,7 @@ for index, strategy in enumerate(strategies):
             # 使用空行增加一點間距
             st.write("") 
             
-            # 導航按鈕 (Streamlit原生支援)
+            # 導航按鈕
             st.page_link(
                 strategy['page_path'], 
                 label=strategy['btn_label'], 
@@ -91,6 +93,6 @@ for index, strategy in enumerate(strategies):
                 use_container_width=True
             )
 
-# 6. 未來展望 / 預告區塊 (增加期待感)
+# 6. 未來展望 / 預告區塊
 st.markdown("---")
 st.caption("🚧 更多策略正在開發中 (MACD 動能、RSI 逆勢交易...)，敬請期待！")
