@@ -37,6 +37,13 @@ st.set_page_config(
     page_icon="🦅",
     layout="wide",
 )
+
+with st.sidebar:
+    st.page_link("Home.py", label="回到戰情室", icon="🏠")
+    st.divider()
+    st.caption("目前策略")
+    st.markdown("### 🦅 QQQ 動態槓桿")
+
 st.markdown(
     "<h1 style='margin-bottom:0.5em;'>📊 QQQ LRS 動態槓桿策略回測</h1>",
     unsafe_allow_html=True,
