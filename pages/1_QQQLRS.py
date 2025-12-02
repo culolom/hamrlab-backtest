@@ -41,8 +41,10 @@ st.set_page_config(
 with st.sidebar:
     st.page_link("Home.py", label="回到戰情室", icon="🏠")
     st.divider()
-    st.caption("目前策略")
-    st.markdown("### 🦅 QQQ 動態槓桿")
+    st.markdown("### 🔗 快速連結")
+    st.page_link("https://hamr-lab.com/", label="回到官網首頁", icon="🏠")
+    st.page_link("https://www.youtube.com/@hamr-lab", label="YouTube 頻道", icon="📺")
+    st.page_link("https://hamr-lab.com/contact", label="問題回報 / 許願", icon="📝")
 
 st.markdown(
     "<h1 style='margin-bottom:0.5em;'>📊 QQQ LRS 動態槓桿策略回測</h1>",
