@@ -412,28 +412,85 @@ if st.button("開始回測 🚀"):
                   f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
 
 
+    
     ###############################################################
     # 完整比較表格（移除 index ＋ 置中）
     ###############################################################
-
-    # --- 移除 index（0/1/2） ---
-    formatted = formatted.reset_index(drop=True)
-    raw_table = raw_table.reset_index(drop=True)
-
-    # --- 套用原本的樣式 ---
+    
+    # --- 產生原始 DataFrame ---
+    metrics_table = pd.DataFrame([
+        {
+            "策略": f"{lev_label} LRS 槓桿策略",
+            "期末資產": capital_lrs_final,
+            "總報酬率": final_ret_lrs,
+            "CAGR（年化）": cagr_lrs,
+            "Calmar Ratio": calmar_lrs,
+            "最大回撤（MDD）": mdd_lrs,
+            "年化波動": vol_lrs,
+            "Sharpe": sharpe_lrs,
+            "Sortino": sortino_lrs,
+            "交易次數": trade_count_lrs,
+        },
+        {
+            "策略": f"{lev_label} BH（槓桿）",
+            "期末資產": capital_lev_final,
+            "總報酬率": final_ret_lev,
+            "CAGR（年化）": cagr_lev,
+            "Calmar Ratio": calmar_lev,
+            "最大回撤（MDD）": mdd_lev,
+            "年化波動": vol_lev,
+            "Sharpe": sharpe_lev,
+            "Sortino": sortino_lev,
+            "交易次數": np.nan,
+        },
+        {
+            "策略": f"{base_label} BH（原型）",
+            "期末資產": capital_base_final,
+            "總報酬率": final_ret_base,
+            "CAGR（年化）": cagr_base,
+            "Calmar Ratio": calmar_base,
+            "最大回撤（MDD）": mdd_base,
+            "年化波動": vol_base,
+            "Sharpe": sharpe_base,
+            "Sortino": sortino_base,
+            "交易次數": np.nan,
+        },
+    ])
+    
+    # -------------------------------
+    # ❗❗ 在這裡移除 index
+    # -------------------------------
+    metrics_table = metrics_table.reset_index(drop=True)
+    raw_table = metrics_table.copy()
+    
+    # 格式化數值
+    formatted = metrics_table.copy()
+    formatted["期末資產"] = formatted["期末資產"].apply(fmt_money)
+    formatted["總報酬率"] = formatted["總報酬率"].apply(fmt_pct)
+    formatted["CAGR（年化）"] = formatted["CAGR（年化）"].apply(fmt_pct)
+    formatted["Calmar Ratio"] = formatted["Calmar Ratio"].apply(fmt_num)
+    formatted["最大回撤（MDD）"] = formatted["最大回撤（MDD）"].apply(fmt_pct)
+    formatted["年化波動"] = formatted["年化波動"].apply(fmt_pct)
+    formatted["Sharpe"] = formatted["Sharpe"].apply(fmt_num)
+    formatted["Sortino"] = formatted["Sortino"].apply(fmt_num)
+    formatted["交易次數"] = formatted["交易次數"].apply(fmt_int)
+    
+    # -------------------------------
+    # ❗❗ 現在才能開始轉成 Styler
+    # -------------------------------
     styled = formatted.style.set_properties(
         subset=["策略"], **{"font-weight": "bold", "color": "#2c7be5"}
     )
-
-    # --- 欄位置中（th + td 全置中） ---
+    
+    # 欄位置中
     styled = styled.set_table_styles(
         [
             {"selector": "th", "props": [("text-align", "center")]},
             {"selector": "td", "props": [("text-align", "center")]},
         ]
     )
-
-    # --- 你原本的 highlight（完全保留） ---
+    
+    # highlight
     highlight_rules = {
         "期末資產": "high",
         "總報酬率": "high",
@@ -444,13 +501,13 @@ if st.button("開始回測 🚀"):
         "Sharpe": "high",
         "Sortino": "high",
     }
-
+    
     for col, direction in highlight_rules.items():
         valid = raw_table[col].dropna()
         if valid.empty:
             continue
         best = valid.max() if direction == "high" else valid.min()
-
+    
         def style_col(_):
             styles = []
             for idx in raw_table.index:
@@ -460,12 +517,10 @@ if st.button("開始回測 🚀"):
                     "color: #28a745; font-weight: bold;" if is_best else "color: #d9534f;"
                 )
             return styles
-
+    
         styled = styled.apply(style_col, subset=[col], axis=0)
-
-    # --- 用 HTML 輸出（保留你原本的方式） ---
+    
     st.write(styled.to_html(), unsafe_allow_html=True)
-
 
     ###############################################################
     # Footer
