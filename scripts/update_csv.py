@@ -1,7 +1,7 @@
 """
-Auto-update adjusted-price CSVs (Smart Append & Split Detection)
-- Automatically detects Stock Splits (like 00663L in 2025)
-- Fixes yfinance MultiIndex column issues
+Auto-update adjusted-price CSVs (Self-Healing Version)
+- Automatically detects & repairs missing Stock Splits (like 00663L)
+- Forces continuity even if Yahoo Finance data is broken
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import re
 import pandas as pd
 import yfinance as yf
+import numpy as np
 
 # -----------------------------------------------------
 # Paths & Config
@@ -32,146 +33,183 @@ def normalize_symbol(sym: str) -> str:
 # Helper: Fix yfinance MultiIndex columns
 # -----------------------------------------------------
 def clean_yfinance_columns(df: pd.DataFrame) -> pd.DataFrame:
-    # 如果是多層索引 (Price, Ticker)，只保留第一層 (Price)
+    # Fix (Price, Ticker) -> Price
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+        try:
+            df.columns = df.columns.get_level_values(0)
+        except IndexError:
+            pass
     return df
 
 # -----------------------------------------------------
-# Load existing CSV
+# CORE: Detect & Repair Splits Manually
 # -----------------------------------------------------
-def load_existing(symbol: str) -> pd.DataFrame | None:
-    path = DATA_DIR / f"{symbol}.csv"
-    if not path.exists():
-        return None
-
-    try:
-        # 嘗試讀取，處理可能的多行 Header 問題
-        # 假設標準格式只有一行 header，如果是亂掉的格式可能需要更複雜的清洗
-        # 這裡簡單讀取，如果出錯就回傳 None 讓它重建
-        df = pd.read_csv(path, index_col=0, parse_dates=True)
-        
-        # 簡單驗證是否有需要的欄位
-        if "Close" not in df.columns:
-            # 可能是因為之前的 MultiIndex 存檔導致 header 錯亂，視為損壞
-            return None
-            
-        df = df.sort_index()
+def detect_and_repair_splits(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    """
+    Scans for massive price discontinuities (>50% drop or >100% gain)
+    and back-adjusts historical data if Yahoo missed the split.
+    """
+    if df.empty or len(df) < 2:
         return df
-    except Exception as e:
-        print(f"⚠ CSV corrupted for {symbol} ({e}), rebuilding...")
-        return None
+
+    # 需要 Open 欄位來計算精確的 Split Ratio (Open[t] / Close[t-1])
+    # 如果只有 Close，這一步只能用 Close 估算
+    has_open = 'Open' in df.columns
+
+    # 計算價格變化率
+    closes = df['Close']
+    prev_closes = closes.shift(1)
+    
+    # 偵測閾值：跌幅 > 40% (0.6) 或 漲幅 > 80% (1.8)
+    # 00663L 1拆7 約跌 85%
+    drops = closes / prev_closes
+    
+    # 找出異常點 (忽略第一筆 NaN)
+    split_candidates = drops[(drops < 0.6) | (drops > 1.8)].dropna()
+
+    if split_candidates.empty:
+        return df
+
+    # 開始修復
+    df_fixed = df.copy()
+    
+    for date, ratio_raw in split_candidates.items():
+        # 取得該日期的整數索引位置
+        loc_idx = df_fixed.index.get_loc(date)
+        if loc_idx == 0: continue
+
+        # 計算修正因子 (Split Factor)
+        # 理想公式： Factor = Previous Close / Current Open
+        # 因為 Split 通常發生在開盤前，Open 應該已經是分割後的價格
+        prev_close = df_fixed['Close'].iloc[loc_idx - 1]
+        
+        if has_open:
+            curr_open = df_fixed['Open'].iloc[loc_idx]
+            # 避免 Open 為 0 或 NaN
+            if pd.isna(curr_open) or curr_open == 0:
+                curr_open = df_fixed['Close'].iloc[loc_idx]
+        else:
+            curr_open = df_fixed['Close'].iloc[loc_idx]
+
+        # Factor > 1 代表拆股 (價格變小，如 175 -> 25，Factor=7)
+        # Factor < 1 代表反向拆股 (價格變大)
+        factor = prev_close / curr_open
+
+        # 簡單過濾：如果這只是市場大崩盤 (例如跌 10-20%)，Factor 會接近 1.1-1.2
+        # 我們只處理 Factor > 1.5 或 Factor < 0.6 的情況
+        if 0.6 < factor < 1.5:
+            continue
+
+        print(f"🔧 REPAIR: Detected missing split for {symbol} on {date.date()}")
+        print(f"   Before: {prev_close:.2f} -> {curr_open:.2f} (Factor: {factor:.4f})")
+        
+        # 執行回溯修正 (Back Adjustment)
+        # 舊價格全部除以 Factor (例如 175 / 7 = 25)
+        # 舊成交量全部乘以 Factor (股數變多)
+        mask = df_fixed.index < date
+        
+        cols_to_fix = ['Close', 'Open', 'High', 'Low']
+        for col in cols_to_fix:
+            if col in df_fixed.columns:
+                df_fixed.loc[mask, col] = df_fixed.loc[mask, col] / factor
+        
+        if 'Volume' in df_fixed.columns:
+            df_fixed.loc[mask, 'Volume'] = df_fixed.loc[mask, 'Volume'] * factor
+
+        print(f"   ✅ History adjusted. New prev close: {df_fixed.loc[mask, 'Close'].iloc[-1]:.2f}")
+
+    return df_fixed
 
 # -----------------------------------------------------
-# Download Full History (Overwrite)
+# Download & Update Logic
 # -----------------------------------------------------
-def download_full_history(symbol: str):
-    print(f"📦 Downloading FULL history for {symbol}...")
-    df = yf.download(symbol, period="max", auto_adjust=True, progress=False)
-    df = clean_yfinance_columns(df)
+def download_data(symbol: str, start=None, mode="full") -> pd.DataFrame:
+    """Generic download wrapper that fetches Open/Close/Volume"""
+    print(f"⬇ Fetching {symbol} ({mode})...")
     
-    if df.empty:
-        print(f"❌ FAILED: no data for {symbol}")
-        return
-
-    df = df[["Close", "Volume"]]
-    df.index.name = "Date"
-    df.to_csv(DATA_DIR / f"{symbol}.csv")
-    print(f"✅ Saved fresh CSV for {symbol} ({len(df)} rows)")
-
-# -----------------------------------------------------
-# Update single symbol CSV (Smart Update)
-# -----------------------------------------------------
-def update_symbol(symbol: str):
-    DATA_DIR.mkdir(exist_ok=True)
-    existing = load_existing(symbol)
-
-    # 1. 如果沒有舊檔，直接下載全量
-    if existing is None or existing.empty:
-        download_full_history(symbol)
-        return
-
-    # 2. 檢查價格一致性 (Split Detection)
-    last_date = existing.index[-1]
-    
-    # 下載這幾天的資料 (包含 last_date) 用來比對
-    # 往回多抓 5 天確保有重疊資料
-    check_start = last_date - timedelta(days=5)
-    
-    print(f"🔍 Checking {symbol} consistency since {last_date.date()}...")
-    
-    new_data = yf.download(
-        symbol, 
-        start=check_start.strftime("%Y-%m-%d"), 
-        end=None, # 到最新
-        auto_adjust=True, 
+    df = yf.download(
+        symbol,
+        start=start,
+        period="max" if mode=="full" else None,
+        auto_adjust=True, # 嘗試讓 Yahoo 自動調整
         progress=False
     )
-    new_data = clean_yfinance_columns(new_data)
+    df = clean_yfinance_columns(df)
     
+    # 確保有需要的欄位，若沒有則補 NaN (避免報錯)
+    required = ['Open', 'Close', 'Volume']
+    for col in required:
+        if col not in df.columns:
+            df[col] = np.nan
+            
+    return df
+
+def update_symbol(symbol: str):
+    DATA_DIR.mkdir(exist_ok=True)
+    csv_path = DATA_DIR / f"{symbol}.csv"
+    
+    # 1. Load Existing
+    existing = None
+    if csv_path.exists():
+        try:
+            existing = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+            if "Close" not in existing.columns: existing = None
+        except:
+            existing = None
+
+    # 2. Determine Fetch Strategy
+    if existing is None or existing.empty:
+        # Full Download
+        new_data = download_data(symbol, mode="full")
+    else:
+        # Append Update
+        last_date = existing.index[-1]
+        start_date = (last_date - timedelta(days=10)).strftime("%Y-%m-%d") # 多抓幾天用來接合
+        print(f"📄 Appending {symbol} from {start_date}...")
+        
+        fresh = download_data(symbol, start=start_date, mode="append")
+        
+        # 合併舊與新 (這裡還沒修復)
+        # 先把 fresh 中重疊的部分蓋過 existing (以最新的數據為準)
+        existing = existing[existing.index < pd.Timestamp(start_date)]
+        new_data = pd.concat([existing, fresh])
+        new_data = new_data[~new_data.index.duplicated(keep='last')]
+        new_data = new_data.sort_index()
+
     if new_data.empty:
-        print(f"⏭ No new data found for {symbol}")
+        print(f"⚠ No data for {symbol}")
         return
 
-    # 比對 last_date 當天的價格
-    if last_date in new_data.index:
-        old_close = existing.loc[last_date, "Close"]
-        new_close = new_data.loc[last_date, "Close"]
-        
-        # 處理可能的 Series (如果有重複 index)
-        if isinstance(old_close, pd.Series): old_close = old_close.iloc[-1]
-        if isinstance(new_close, pd.Series): new_close = new_close.iloc[-1]
+    # 3. 執行「自我修復」檢測 (關鍵步驟！)
+    # 無論是新下載還是合併後，都要檢查是否有「假崩盤」
+    repaired_data = detect_and_repair_splits(new_data, symbol)
 
-        # 計算價格差異比例
-        ratio = abs(new_close - old_close) / old_close
-        
-        # 如果差異超過 10%，視為發生拆股/除權息，觸發全量更新
-        if ratio > 0.1:
-            print(f"⚠ Split/Adjustment detected! ({old_close:.2f} vs {new_close:.2f})")
-            print("♻ Triggering FULL re-download to fix history...")
-            download_full_history(symbol)
-            return
+    # 4. Save (只保留 Close, Volume 以節省空間，或者保留 Open 也可以)
+    # 這裡依照您的需求只留 Date, Close, Volume
+    final_output = repaired_data[["Close", "Volume"]].copy()
+    final_output.index.name = "Date"
     
-    # 3. 如果價格一致，執行 Append
-    # 只取 last_date 之後的新資料
-    new_rows = new_data[new_data.index > last_date].copy()
-    
-    if new_rows.empty:
-        print(f"⏭ {symbol} already up-to-date")
-        return
-
-    new_rows = new_rows[["Close", "Volume"]]
-    new_rows.index.name = "Date"
-
-    merged = pd.concat([existing, new_rows])
-    merged = merged[~merged.index.duplicated(keep="last")]
-    merged = merged.sort_index()
-
-    merged.to_csv(DATA_DIR / f"{symbol}.csv")
-    print(f"✅ Appended {len(new_rows)} rows to {symbol}")
-
-# -----------------------------------------------------
-# Read symbols.txt
-# -----------------------------------------------------
-def load_symbols() -> list[str]:
-    if not SYMBOLS_FILE.exists():
-        # Fallback for demo
-        return ["00663L.TW"]
-
-    with open(SYMBOLS_FILE, "r", encoding="utf-8") as f:
-        return [normalize_symbol(line.strip()) for line in f if line.strip() and not line.startswith("#")]
+    final_output.to_csv(csv_path)
+    print(f"✅ Saved {symbol} ({len(final_output)} rows)")
 
 # -----------------------------------------------------
 # Main
 # -----------------------------------------------------
 def main():
-    symbols = load_symbols()
+    if not SYMBOLS_FILE.exists():
+        # Demo mode if file missing
+        print("⚠ symbols.txt missing, using demo list.")
+        symbols = ["00663L.TW"] 
+    else:
+        with open(SYMBOLS_FILE, "r", encoding="utf-8") as f:
+            symbols = [normalize_symbol(line.strip()) for line in f if line.strip() and not line.startswith("#")]
+
     for sym in symbols:
-        print("\n" + "="*30)
+        print("-" * 40)
         try:
             update_symbol(sym)
         except Exception as e:
-            print(f"⚠ ERROR updating {sym}: {e}")
+            print(f"❌ Error {sym}: {e}")
 
 if __name__ == "__main__":
     main()
