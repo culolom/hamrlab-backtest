@@ -490,6 +490,32 @@ if st.button("開始回測 🚀"):
         ]
     )
     
+    # 顯示最佳值（你的 highlight 邏輯）
+    
+    for col, direction in highlight_rules.items():
+        valid = raw_table[col].dropna()
+        if valid.empty:
+            continue
+        best = valid.max() if direction == "high" else valid.min()
+    
+        def style_col(_):
+            styles = []
+            for idx in raw_table.index:
+                val = raw_table.loc[idx, col]
+                is_best = (not np.isnan(val)) and (val == best)
+                styles.append(
+                    "color: #28a745; font-weight: bold;" if is_best else "color: #d9534f;"
+                )
+            return styles
+    
+        styled = styled.apply(style_col, subset=[col], axis=0)
+    
+    # ❗❗ 最重要的：隱藏 index
+    styled = styled.hide_index()
+    
+    # 輸出 HTML
+    st.write(styled.to_html(), unsafe_allow_html=True)
+    
     # highlight
     highlight_rules = {
         "期末資產": "high",
