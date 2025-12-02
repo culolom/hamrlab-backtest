@@ -135,42 +135,60 @@ def format_number(v, d=2):
         return "—"
 
 ###############################################################
-# yfinance 下載資料
+# 從 data/ 讀取 CSV（完全取代 yfinance）
 ###############################################################
 
-@st.cache_data(show_spinner=False)
-def fetch_history(symbol: str, start: dt.date, end: dt.date):
-    df = yf.download(symbol, start=start, end=end, auto_adjust=True)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    if df.empty:
-        return df
-    df = df.sort_index()
-    df = df[~df.index.duplicated()]
+DATA_DIR = Path("data")
 
-    if "Close" in df.columns:
+@st.cache_data(show_spinner=False)
+def read_csv_from_data(symbol: str) -> pd.DataFrame:
+    """讀取 data/{symbol}.csv（Date, Close 或 Price 欄位）"""
+    path = DATA_DIR / f"{symbol}.csv"
+    if not path.exists():
+        st.error(f"❌ 找不到資料檔案：{path}")
+        return pd.DataFrame()
+
+    df = pd.read_csv(path, parse_dates=["Date"], index_col="Date")
+    df = df.sort_index()
+    df = df[~df.index.duplicated(keep="first")]
+
+    # 統一名稱 → Price
+    if "Price" in df.columns:
+        df["Price"] = df["Price"]
+    elif "Close" in df.columns:
         df["Price"] = df["Close"]
-    elif "Adj Close" in df.columns:
-        df["Price"] = df["Adj Close"]
     else:
-        df["Price"] = df[df.columns[0]]
+        st.error(f"❌ CSV 缺少 Price 或 Close 欄位：{symbol}")
+        return pd.DataFrame()
 
     return df[["Price"]]
 
+
 @st.cache_data(show_spinner=False)
 def load_price(symbol: str, start: dt.date, end: dt.date):
-    df = fetch_history(symbol, start, end)
-    return df[["Price"]] if not df.empty else df
+    """讀取 CSV 並切割日期區間"""
+    df = read_csv_from_data(symbol)
+    if df.empty:
+        return df
+
+    df = df[(df.index >= pd.to_datetime(start)) & (df.index <= pd.to_datetime(end))]
+    return df
+
 
 @st.cache_data(show_spinner=False)
 def get_full_range(base_symbol: str, lev_symbol: str):
-    b = yf.Ticker(base_symbol).history(period="max", auto_adjust=True)
-    l = yf.Ticker(lev_symbol).history(period="max", auto_adjust=True)
-    if b.empty or l.empty:
-        return dt.date(2012, 1, 1), dt.date.today()
-    b = b.sort_index()
-    l = l.sort_index()
-    return max(b.index.min().date(), l.index.min().date()), min(b.index.max().date(), l.index.max().date())
+    """計算兩檔 ETF 的共同有效區間（來自 CSV）"""
+    df_b = read_csv_from_data(base_symbol)
+    df_l = read_csv_from_data(lev_symbol)
+
+    if df_b.empty or df_l.empty:
+        return dt.date(2010, 1, 1), dt.date.today()
+
+    min_date = max(df_b.index.min().date(), df_l.index.min().date())
+    max_date = min(df_b.index.max().date(), df_l.index.max().date())
+
+    return min_date, max_date
+
 
 ###############################################################
 # UI 輸入
