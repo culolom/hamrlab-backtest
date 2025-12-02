@@ -15,10 +15,7 @@ st.set_page_config(
 
 # 2. 側邊欄：品牌與外部連結
 with st.sidebar:
-    # 如果您的 Logo 連結失效，可以換成您網站上的圖片網址
-    st.image("https://hamr-lab.com/wp-content/uploads/2025/01/cropped-hamr-logo.png", width=100) 
-    st.title("🐹 倉鼠實驗室")
-    st.caption("v1.0.0 Beta | 白銀會員限定")
+
     
     st.divider()
     
