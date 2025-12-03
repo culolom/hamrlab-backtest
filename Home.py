@@ -17,6 +17,7 @@ st.set_page_config(
 )
 
 
+
 # ------------------------------------------------------
 # ✅ 正式內容開始
 # ------------------------------------------------------
@@ -29,7 +30,7 @@ with st.sidebar:
         st.title("🐹") 
         
     st.title("倉鼠實驗室")
-    st.caption("v1.2.0 Beta | 白銀會員限定")
+    st.caption("v1.3.0 Beta | 白銀會員限定")
     
     st.divider()
     
@@ -72,13 +73,13 @@ st.caption(f"{data_status} | 📅 最後更新：{last_update}")
 
 st.markdown("""
 歡迎來到 **倉鼠回測平台**！這裡是鼠叔為白銀會員打造的專屬軍火庫。
-下方儀表板顯示主要指數的 **200日均線 (牛熊分界)** 狀態，幫助您快速判斷市場水位。
+下方儀表板顯示主要指數的 **200日均線** 狀態，以及 **動能排行榜**，幫助您快速判斷市場水位。
 """)
 
 st.divider()
 
 # ==========================================
-# 📊 新增功能：市場即時儀表板 (戰情室核心)
+# 📊 功能 1：市場即時儀表板 (戰情室核心)
 # ==========================================
 st.markdown("### 🚥 市場多空訊號 (最新收盤)")
 
@@ -91,11 +92,9 @@ def get_signal_status(symbol_csv, window=200):
 
     try:
         df = pd.read_csv(csv_path)
-        # 兼容 Close 或 Adj Close
         col_price = "Adj Close" if "Adj Close" in df.columns else "Close"
         
-        # 簡單清理並計算
-        df = df.tail(300).copy() # 只取最後300筆提升效能
+        df = df.tail(300).copy()
         df[col_price] = pd.to_numeric(df[col_price], errors='coerce')
         df["MA_200"] = df[col_price].rolling(window=window).mean()
         
@@ -106,25 +105,21 @@ def get_signal_status(symbol_csv, window=200):
         if pd.isna(ma):
             return price, None, "資料不足", "off"
             
-        # 判斷邏輯：站上均線為多頭(綠燈)，跌破為空頭(紅燈)
         if price > ma:
             status = "🟢 多頭 (持有)"
-            delta_color = "normal"  # Streamlit 預設 normal 是綠色 (Good)
+            delta_color = "normal"
         else:
             status = "🔴 空頭 (空手)"
-            delta_color = "inverse" # Streamlit 預設 inverse 是紅色 (Bad)
+            delta_color = "inverse"
             
         return price, ma, status, delta_color
         
     except Exception as e:
         return None, None, None, "讀取錯誤"
 
-# 建立 3 個欄位顯示儀表板
 m1, m2, m3 = st.columns(3)
 
-# 1. 顯示 QQQ 狀態
 with m1:
-    # 這裡會去讀取 data/QQQ.csv
     price, ma, status, color = get_signal_status("QQQ.csv")
     if price:
         st.metric(
@@ -137,11 +132,8 @@ with m1:
     else:
         st.info("尚無 QQQ 數據")
 
-# 2. 顯示 0050 狀態
 with m2:
-    # 這裡會去讀取 data/0050.csv (請確認您的檔名是否正確，或是 006208.csv)
     price, ma, status, color = get_signal_status("0050.csv") 
-    
     if price:
         st.metric(
             label="🇹🇼 0050 台灣五十",
@@ -153,19 +145,123 @@ with m2:
     else:
         st.info("尚無 0050 數據")
 
-# 3. 預留位置 / 比特幣 / 其他
 with m3:
-    # 示範：如果有比特幣資料可讀取 BTC-USD.csv，目前先放開發中提示
     st.container(border=True).markdown("""
     **🚧 更多訊號開發中**
-    
     比特幣 (BTC) 與 總體經濟指標
     即將上線...
     """)
 
 st.divider()
 
-# 4. 策略定義 (資料結構)
+# ==========================================
+# 🏆 功能 2：本月動能排行榜 (新增功能)
+# ==========================================
+st.markdown("### 🏆 本月動能排行榜 (過去 12 個月績效)")
+
+def get_momentum_ranking(data_dir="data"):
+    """
+    計算邏輯：
+    1. 基準日(End Date) = 上個月的最後一天 (例如今天是 12/15, 基準日就是 11/30)
+    2. 起始日(Start Date) = 基準日回推 12 個月
+    3. 報酬率 = (基準日價格 - 起始日價格) / 起始日價格
+    """
+    if not os.path.exists(data_dir):
+        return None, "無資料夾"
+
+    # 計算日期區間
+    today = pd.Timestamp.today()
+    # 取得本月第一天，再減一天就是上個月最後一天
+    this_month_start = today.replace(day=1)
+    end_date = this_month_start - pd.Timedelta(days=1)
+    # 回推 12 個月
+    start_date = end_date - pd.DateOffset(months=12)
+
+    results = []
+
+    for f in os.listdir(data_dir):
+        if f.endswith(".csv"):
+            symbol = f.replace(".csv", "")
+            try:
+                # 讀取並處理日期
+                df = pd.read_csv(os.path.join(data_dir, f))
+                if "Date" not in df.columns: continue
+                
+                col_price = "Adj Close" if "Adj Close" in df.columns else "Close"
+                df["Date"] = pd.to_datetime(df["Date"])
+                df = df.set_index("Date").sort_index()
+
+                # 確保在截止日有資料 (或是最接近的一天)
+                # 使用 slicing 取得截止日(含)之前的資料
+                hist_window = df.loc[:end_date]
+                
+                if hist_window.empty: continue
+                
+                # 如果資料太舊(例如最後一筆資料離截止日超過15天)，視為無效
+                last_valid_date = hist_window.index[-1]
+                if (end_date - last_valid_date).days > 15: continue
+                
+                p_end = hist_window[col_price].iloc[-1]
+
+                # 取得起始日價格 (12個月前)
+                start_window = df.loc[:start_date]
+                if start_window.empty: continue # 歷史資料不足 12 個月
+                
+                p_start = start_window[col_price].iloc[-1]
+
+                ret = (p_end - p_start) / p_start
+                
+                results.append({
+                    "代號": symbol,
+                    "12月累積報酬": ret,
+                    "收盤價": p_end
+                })
+            except:
+                continue
+    
+    if not results:
+        return None, end_date
+
+    # 轉成 DataFrame 並排序
+    res_df = pd.DataFrame(results)
+    res_df = res_df.sort_values("12月累積報酬", ascending=False).reset_index(drop=True)
+    res_df.index += 1 # 排名從 1 開始
+    res_df.index.name = "排名"
+    
+    return res_df, end_date
+
+# 執行計算與顯示
+rank_df, calc_date = get_momentum_ranking()
+
+if rank_df is not None:
+    st.caption(f"📅 統計基準日：**{calc_date.strftime('%Y-%m-%d')}** (上個月底) | 過去 12 個月累積報酬")
+    
+    # 使用 st.dataframe 顯示，並加上 Bar Chart 視覺化
+    st.dataframe(
+        rank_df,
+        column_config={
+            "12月累積報酬": st.column_config.ProgressColumn(
+                "12月累積報酬 (Momentum)",
+                help="過去 12 個月的漲跌幅",
+                format="%.2f%%",
+                min_value=-0.5, # 設定進度條範圍，可依需求調整
+                max_value=1.0,
+            ),
+            "收盤價": st.column_config.NumberColumn(
+                "收盤價 (Price)",
+                format="$%.2f"
+            )
+        },
+        use_container_width=True
+    )
+else:
+    st.info("尚無足夠的歷史資料可計算動能排行。")
+
+st.divider()
+
+# ==========================================
+# 🛠️ 策略定義區
+# ==========================================
 strategies = [
     {
         "name": "QQQ LRS 動態槓桿 (美股)",
@@ -185,7 +281,6 @@ strategies = [
     },
 ]
 
-# 5. 策略展示區
 st.subheader("🛠️ 選擇你的實驗策略")
 
 cols = st.columns(2)
