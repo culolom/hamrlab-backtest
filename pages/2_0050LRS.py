@@ -417,14 +417,17 @@ if st.button("開始回測 🚀"):
     with row1[3]:
         st.metric("最大回撤（LRS）", format_percent(mdd_lrs),
                   f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
+
     ###############################################################
-    # 升級版策略比較（轉置表 + 最佳策略高亮 + Heatmap）
+    #  修正版：轉置表格 + highlight_best + heatmap（不會再報錯）
     ###############################################################
     
     import pandas as pd
     import numpy as np
     from matplotlib import cm
     
+    
+    # ===== 格式化工具 =====
     def fmt_money(x):
         return f"{x:,.0f} 元"
     
@@ -438,50 +441,52 @@ if st.button("開始回測 🚀"):
         return "—" if (pd.isna(x) or x == 0) else str(int(x))
     
     
-    # ====== 1) Raw Data ======
+    # ====== 1) Raw 數字（比較用） ======
     raw_table = pd.DataFrame([
         {
             "策略": f"{lev_label} LRS 槓桿策略",
-            "期末資產": capital_lrs_final,
-            "總報酬率": final_ret_lrs,
-            "CAGR（年化）": cagr_lrs,
-            "Calmar Ratio": calmar_lrs,
-            "最大回撤（MDD）": mdd_lrs,
-            "年化波動": vol_lrs,
-            "Sharpe": sharpe_lrs,
-            "Sortino": sortino_lrs,
-            "交易次數": trade_count_lrs,
+            "期末資產": float(capital_lrs_final),
+            "總報酬率": float(final_ret_lrs),
+            "CAGR（年化）": float(cagr_lrs),
+            "Calmar Ratio": float(calmar_lrs),
+            "最大回撤（MDD）": float(mdd_lrs),
+            "年化波動": float(vol_lrs),
+            "Sharpe": float(sharpe_lrs),
+            "Sortino": float(sortino_lrs),
+            "交易次數": float(trade_count_lrs),
         },
         {
             "策略": f"{lev_label} BH（槓桿）",
-            "期末資產": capital_lev_final,
-            "總報酬率": final_ret_lev,
-            "CAGR（年化）": cagr_lev,
-            "Calmar Ratio": calmar_lev,
-            "最大回撤（MDD）": mdd_lev,
-            "年化波動": vol_lev,
-            "Sharpe": sharpe_lev,
-            "Sortino": sortino_lev,
+            "期末資產": float(capital_lev_final),
+            "總報酬率": float(final_ret_lev),
+            "CAGR（年化）": float(cagr_lev),
+            "Calmar Ratio": float(calmar_lev),
+            "最大回撤（MDD）": float(mdd_lev),
+            "年化波動": float(vol_lev),
+            "Sharpe": float(sharpe_lev),
+            "Sortino": float(sortino_lev),
             "交易次數": np.nan,
         },
         {
             "策略": f"{base_label} BH（原型）",
-            "期末資產": capital_base_final,
-            "總報酬率": final_ret_base,
-            "CAGR（年化）": cagr_base,
-            "Calmar Ratio": calmar_base,
-            "最大回撤（MDD）": mdd_base,
-            "年化波動": vol_base,
-            "Sharpe": sharpe_base,
-            "Sortino": sortino_base,
+            "期末資產": float(capital_base_final),
+            "總報酬率": float(final_ret_base),
+            "CAGR（年化）": float(cagr_base),
+            "Calmar Ratio": float(calmar_base),
+            "最大回撤（MDD）": float(mdd_base),
+            "年化波動": float(vol_base),
+            "Sharpe": float(sharpe_base),
+            "Sortino": float(sortino_base),
             "交易次數": np.nan,
         },
     ]).reset_index(drop=True)
     
+    # ❗ 轉置前先分兩份
+    t_raw = raw_table.set_index("策略").T
     
-    # ====== 2) 格式化 ======
+    
+    # ====== 2) 格式化版本（顯示用） ======
     fmt_table = raw_table.copy()
-    
     fmt_table["期末資產"] = fmt_table["期末資產"].apply(fmt_money)
     fmt_table["總報酬率"] = fmt_table["總報酬率"].apply(fmt_pct)
     fmt_table["CAGR（年化）"] = fmt_table["CAGR（年化）"].apply(fmt_pct)
@@ -492,27 +497,25 @@ if st.button("開始回測 🚀"):
     fmt_table["Sortino"] = fmt_table["Sortino"].apply(fmt_num)
     fmt_table["交易次數"] = fmt_table["交易次數"].apply(fmt_int)
     
-    
-    # ====== 3) 轉置 ======
-    t_raw = raw_table.set_index("策略").T
     t_fmt = fmt_table.set_index("策略").T
     
     
-    # ====== 4) highlight_best（逐列最佳策略） ======
-    def highlight_best(s):
-        """每列找最大值（或最小值）並加綠色 highlight"""
-        # 最大回撤（MDD）要找最小值才是好的
-        if s.name == "最大回撤（MDD）":
-            best = s.astype(float).idxmin()
+    # ====== 3) highlight_best（使用 t_raw 不會報錯） ======
+    def highlight_best(row):
+        numeric_row = row.copy()
+    
+        # 最大回撤要找最小值
+        if row.name == "最大回撤（MDD）":
+            best = numeric_row.astype(float).idxmin()
         else:
-            best = s.replace("—", np.nan).astype(float).idxmax()
+            best = numeric_row.astype(float).idxmax()
     
-        return [ "background-color: #ccf7d7" if idx == best else "" for idx in s.index ]
+        return ["background-color: #ccf7d7" if col == best else "" for col in row.index]
     
     
-    # ====== 5) soft heatmap（淡淡背景，不蓋掉 highlight） ======
+    # ====== 4) soft heatmap（也用 t_raw） ======
     def soft_heatmap(series, cmap_name="BuGn"):
-        s = series.replace("—", np.nan).astype(float).fillna(0.0)
+        s = series.astype(float).fillna(0.0)
         if s.max() - s.min() < 1e-9:
             norm = (s - s.min())
         else:
@@ -520,35 +523,31 @@ if st.button("開始回測 🚀"):
     
         cmap = cm.get_cmap(cmap_name)
     
-        # 🔥 透明度調低，避免蓋掉 highlight_best
+        # 透明度：0.1（不會蓋掉 highlight）
         return norm.map(lambda x: f"background-color: rgba{cmap(x, 0.10)}")
     
     
-    # ====== 6) 套用 Styler ======
+    # ====== 5) 套用 Styler（用 t_fmt 顯示，用 t_raw 計算） ======
     styled = t_fmt.style
     
-    # 表頭變藍色 + 置中
-    styled = styled.set_properties(**{"text-align": "center"})
-    styled = styled.set_table_styles([
-        {"selector": "th", "props": [("text-align", "center"), ("color", "#1f77d0"), ("font-weight", "bold")]}
-    ])
+    # 先 highlight_best
+    styled = styled.apply(lambda row: highlight_best(t_raw.loc[row.name]), axis=1)
     
-    # 套用 highlight_best
-    styled = styled.apply(highlight_best, axis=1)
-    
-    # Heatmap：依欄逐一加淡淡背景
+    # 再加 heatmap
     for col in t_raw.columns:
         styled = styled.apply(
             lambda _: soft_heatmap(t_raw[col]),
             subset=pd.IndexSlice[:, col]
         )
     
+    # 美化
+    styled = styled.set_properties(**{"text-align": "center"})
     styled = styled.hide(axis="index")
+    styled = styled.set_table_styles([
+        {"selector": "th", "props": [("text-align", "center"), ("color", "#1f77d0"), ("font-weight", "bold")]}
+    ])
     
     st.markdown("### 📊 策略比較（升級版轉置表格）")
     st.write(styled.to_html(), unsafe_allow_html=True)
 
-
-
-    
     ###############################################################
