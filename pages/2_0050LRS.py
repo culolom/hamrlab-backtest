@@ -38,6 +38,7 @@ st.set_page_config(
     page_icon="📈",
     layout="wide",
 )
+
 with st.sidebar:
     st.page_link("Home.py", label="回到戰情室", icon="🏠")
     st.divider()
@@ -56,7 +57,7 @@ st.markdown(
 <b>本工具比較三種策略（已改成 CSV 資料，不使用 yfinance）：</b><br>
 1️⃣ 原型 ETF Buy & Hold（0050 / 006208）<br>
 2️⃣ 槓桿 ETF Buy & Hold（00631L / 00663L / 00675L / 00685L）<br>
-3️⃣ 槓桿 ETF LRS（訊號來自原型 ETF 的 200 日 SMA，實際進出槓桓 ETF）<br>
+3️⃣ 槓桿 ETF LRS（訊號來自原型 ETF 的 200 日 SMA，實際進出槓桿 ETF）<br>
 <small>（資料來自 GitHub Actions 自動更新的 CSV）</small>
 """,
     unsafe_allow_html=True,
@@ -78,8 +79,7 @@ LEV_ETFS = {
     "00685L 群益台灣加權正2": "00685L.TW",
 }
 
-WINDOW = 200  # 固定 200 日 SMA
-
+WINDOW = 200
 DATA_DIR = Path("data")
 
 ###############################################################
@@ -95,7 +95,6 @@ def load_csv(symbol: str) -> pd.DataFrame:
     df = df.sort_index()
     df["Price"] = df["Close"]
     return df[["Price"]]
-
 
 def get_full_range_from_csv(base_symbol: str, lev_symbol: str):
     df1 = load_csv(base_symbol)
@@ -124,13 +123,11 @@ def calc_metrics(series: pd.Series):
     sortino = (avg / downside) * np.sqrt(252) if downside > 0 else np.nan
     return vol, sharpe, sortino
 
-
 def fmt_money(v):
     try:
         return f"{v:,.0f} 元"
     except:
         return "—"
-
 
 def fmt_pct(v, d=2):
     try:
@@ -138,13 +135,11 @@ def fmt_pct(v, d=2):
     except:
         return "—"
 
-
 def fmt_num(v, d=2):
     try:
         return f"{v:.{d}f}"
     except:
         return "—"
-
 
 def fmt_int(v):
     try:
@@ -152,121 +147,37 @@ def fmt_int(v):
     except:
         return "—"
 
-
 def nz(x, default=0.0):
     return float(np.nan_to_num(x, nan=default))
 
-
-def format_currency(v):
-    try:
-        return f"{v:,.0f} 元"
-    except:
-        return "—"
-
-
-def format_percent(v, d=2):
-    try:
-        return f"{v*100:.{d}f}%"
-    except:
-        return "—"
-
-
-def format_number(v, d=2):
-    try:
-        return f"{v:.{d}f}"
-    except:
-        return "—"
-
-
 ###############################################################
-# Heat Square：策略熱力矩陣（直接寫在同檔）
+# Heat Square（修正版）
 ###############################################################
 
-def _hs_get_color(value, vmin, vmax, reverse=False):
-    """綠 → 黃 → 紅 的顏色漸層，支援反向（適用 MDD / 波動）"""
-    if pd.isna(value):
-        return "rgba(200,200,200,0.25)"  # 空值 → 灰色
-
-    norm = (value - vmin) / (vmax - vmin + 1e-9)
-    norm = float(np.clip(norm, 0, 1))
-
-    if reverse:
-        norm = 1 - norm
-
-    # 綠→黃→紅
-    r = int(255 * norm)
-    g = int(255 * (1 - abs(norm - 0.5) * 2))
-    b = int(80 * (1 - norm))
-
-    return f"rgba({r},{g},{b},0.35)"
-
-
-def _hs_square(title, value, vmin, vmax, reverse=False, fmt=lambda x: x):
-    color = _hs_get_color(value, vmin, vmax, reverse)
-    disp = fmt(value)
-
-    return f"""
-    <div style="
-        background:{color};
-        padding:16px;
-        border-radius:12px;
-        text-align:center;
-        min-width:130px;
-        margin:6px;
-        display:flex;
-        flex-direction:column;
-        justify-content:center;
-    ">
-        <div style="font-size:13px;color:#888;margin-bottom:6px;">{title}</div>
-        <div style="font-size:20px;font-weight:700;">{disp}</div>
-    </div>
-    """
-
+def _hs_color(values, reverse=False):
+    vmin, vmax = min(values), max(values)
+    span = vmax - vmin if vmax != vmin else 1
+    colors = []
+    for v in values:
+        t = (v - vmin) / span
+        if reverse:
+            t = 1 - t
+        colors.append(f"rgba(0,150,0,{0.15 + 0.35*t})")
+    return colors
 
 def render_heat_square(metrics):
-    """
-    metrics = {
-        "策略A": {"final":123, "cagr":0.12, ...},
-        "策略B": {...},
-        "策略C": {...},
-    }
-    """
-
-    # 取出三組策略名稱
     names = list(metrics.keys())
 
-    # 取出各指標
-    final_values = [metrics[n]["final"] for n in names]
-    cagr_values = [metrics[n]["cagr"] for n in names]
-    sharpe_values = [metrics[n]["sharpe"] for n in names]
-    sortino_values = [metrics[n]["sortino"] for n in names]
-    mdd_values = [metrics[n]["mdd"] for n in names]
-    vol_values = [metrics[n]["vol"] for n in names]
-
-    # 依照值大小給顏色（簡化版 heatmap）
-    def norm_color(values, reverse=False):
-        mini, maxi = min(values), max(values)
-        rng = maxi - mini if maxi != mini else 1
-        colors = []
-        for v in values:
-            t = (v - mini) / rng
-            if reverse: 
-                t = 1 - t
-            colors.append(f"rgba(0, 150, 0, {0.15 + 0.35 * t})")
-        return colors
+    final_v = [metrics[n]["final"] for n in names]
+    cagr_v  = [metrics[n]["cagr"]  for n in names]
+    shrp_v  = [metrics[n]["sharpe"] for n in names]
+    sort_v  = [metrics[n]["sortino"] for n in names]
+    mdd_v   = [metrics[n]["mdd"] for n in names]
+    vol_v   = [metrics[n]["vol"] for n in names]
 
     html = "<div style='display:flex;gap:16px;margin-top:12px;'>"
 
     for i, name in enumerate(names):
-
-        # 各格子的顏色
-        c_final  = norm_color(final_values)[i]
-        c_cagr   = norm_color(cagr_values)[i]
-        c_sharpe = norm_color(sharpe_values)[i]
-        c_sorti  = norm_color(sortino_values)[i]
-        c_mdd    = norm_color(mdd_values, reverse=True)[i]
-        c_vol    = norm_color(vol_values, reverse=True)[i]
-
         block = f"""
         <div style="
             background:rgba(255,255,255,0.05);
@@ -277,21 +188,19 @@ def render_heat_square(metrics):
         ">
             <div style="font-size:13px;margin-bottom:8px;color:#aaa;">{name}</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">
-                <div style="width:60px;height:28px;background:{c_final};border-radius:6px;line-height:28px;font-size:12px;">資產</div>
-                <div style="width:60px;height:28px;background:{c_cagr};border-radius:6px;line-height:28px;font-size:12px;">CAGR</div>
-                <div style="width:60px;height:28px;background:{c_sharpe};border-radius:6px;line-height:28px;font-size:12px;">Sharpe</div>
-                <div style="width:60px;height:28px;background:{c_sorti};border-radius:6px;line-height:28px;font-size:12px;">Sortino</div>
-                <div style="width:60px;height:28px;background:{c_mdd};border-radius:6px;line-height:28px;font-size:12px;">MDD</div>
-                <div style="width:60px;height:28px;background:{c_vol};border-radius:6px;line-height:28px;font-size:12px;">Vol</div>
+                <div style="width:60px;height:28px;background:{_hs_color(final_v)[i]};border-radius:6px;line-height:28px;font-size:12px;">資產</div>
+                <div style="width:60px;height:28px;background:{_hs_color(cagr_v)[i]};border-radius:6px;line-height:28px;font-size:12px;">CAGR</div>
+                <div style="width:60px;height:28px;background:{_hs_color(shrp_v)[i]};border-radius:6px;line-height:28px;font-size:12px;">Sharpe</div>
+                <div style="width:60px;height:28px;background:{_hs_color(sort_v)[i]};border-radius:6px;line-height:28px;font-size:12px;">Sortino</div>
+                <div style="width:60px;height:28px;background:{_hs_color(mdd_v, reverse=True)[i]};border-radius:6px;line-height:28px;font-size:12px;">MDD</div>
+                <div style="width:60px;height:28px;background:{_hs_color(vol_v, reverse=True)[i]};border-radius:6px;line-height:28px;font-size:12px;">Vol</div>
             </div>
         </div>
         """
-
         html += block
 
     html += "</div>"
     return html
-
 
 ###############################################################
 # UI 輸入
@@ -640,75 +549,72 @@ if st.button("開始回測 🚀"):
     with row1[0]:
         st.metric(
             "期末資產（LRS）",
-            format_currency(capital_lrs_final),
+            fmt_money(capital_lrs_final),
             f"較槓桿BH {asset_gap_lrs_vs_lev:+.2f}%",
         )
     with row1[1]:
         st.metric(
             "CAGR（LRS）",
-            format_percent(cagr_lrs),
+            fmt_pct(cagr_lrs),
             f"較槓桿BH {cagr_gap_lrs_vs_lev:+.2f}%",
         )
     with row1[2]:
         st.metric(
             "年化波動（LRS）",
-            format_percent(vol_lrs),
+            fmt_pct(vol_lrs),
             f"較槓桿BH {vol_gap_lrs_vs_lev:+.2f}%",
             delta_color="inverse",
         )
     with row1[3]:
         st.metric(
             "最大回撤（LRS）",
-            format_percent(mdd_lrs),
+            fmt_pct(mdd_lrs),
             f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%",
             delta_color="inverse",
         )
 
     ###############################################################
-    # Heat Square：三策略強弱矩陣
-    ###############################################################
-    
-    metrics = {
-        f"{lev_label} LRS 槓桿策略": {
-            "final": capital_lrs_final,
-            "cagr": cagr_lrs,
-            "sharpe": sharpe_lrs,
-            "sortino": sortino_lrs,
-            "mdd": mdd_lrs,
-            "vol": vol_lrs,
-        },
-        f"{lev_label} BH（槓桿）": {
-            "final": capital_lev_final,
-            "cagr": cagr_lev,
-            "sharpe": sharpe_lev,
-            "sortino": sortino_lev,
-            "mdd": mdd_lev,
-            "vol": vol_lev,
-        },
-        f"{base_label} BH（原型）": {
-            "final": capital_base_final,
-            "cagr": cagr_base,
-            "sharpe": sharpe_base,
-            "sortino": sortino_base,
-            "mdd": mdd_base,
-            "vol": vol_base,
-        },
-    }
-    
-st.markdown("### 🔥 Heat Square 強弱矩陣")
-
-# Heat Square —— 一定要放在 FULL WIDTH 區塊
-hs_container = st.container()
-with hs_container:
-    heat_html = render_heat_square(metrics)
-    st.markdown(heat_html, unsafe_allow_html=True)
-
-
-    ###############################################################
-    # 轉置表格 + highlight_best + heatmap
+    # Heat Square（一定要放在 columns 外）
     ###############################################################
 
-    # Raw 數字表（不格式化）
+    st.markdown("### 🔥 Heat Square 強弱矩陣（策略雷達）")
+
+    hs_container = st.container()
+    with hs_container:
+        heat_html = render_heat_square(
+            {
+                f"{lev_label} LRS 槓桿策略": {
+                    "final": capital_lrs_final,
+                    "cagr": cagr_lrs,
+                    "sharpe": sharpe_lrs,
+                    "sortino": sortino_lrs,
+                    "mdd": mdd_lrs,
+                    "vol": vol_lrs,
+                },
+                f"{lev_label} BH（槓桿）": {
+                    "final": capital_lev_final,
+                    "cagr": cagr_lev,
+                    "sharpe": sharpe_lev,
+                    "sortino": sortino_lev,
+                    "mdd": mdd_lev,
+                    "vol": vol_lev,
+                },
+                f"{base_label} BH（原型）": {
+                    "final": capital_base_final,
+                    "cagr": cagr_base,
+                    "sharpe": sharpe_base,
+                    "sortino": sortino_base,
+                    "mdd": mdd_base,
+                    "vol": vol_base,
+                },
+            }
+        )
+        st.markdown(heat_html, unsafe_allow_html=True)
+
+    ###############################################################
+    # 轉置表格 + highlight + heatmap
+    ###############################################################
+
     raw_table = pd.DataFrame(
         [
             {
@@ -753,7 +659,6 @@ with hs_container:
     t_raw = raw_table.T
     t_fmt = t_raw.copy()
 
-    # 套格式（用上面 fmt_*）
     for col in t_fmt.columns:
         t_fmt.loc["期末資產", col] = fmt_money(t_raw.loc["期末資產", col])
         t_fmt.loc["總報酬率", col] = fmt_pct(t_raw.loc["總報酬率", col])
@@ -765,7 +670,6 @@ with hs_container:
         t_fmt.loc["Sortino", col] = fmt_num(t_raw.loc["Sortino", col])
         t_fmt.loc["交易次數", col] = fmt_int(t_raw.loc["交易次數", col])
 
-    # highlight_best：每一行選一個最佳
     def highlight_best(row):
         s = t_raw.loc[row.name]
         if row.name in ["最大回撤（MDD）", "年化波動"]:
@@ -774,7 +678,6 @@ with hs_container:
             best = s.astype(float).idxmax()
         return ["background-color: #d8f5d0" if c == best else "" for c in row.index]
 
-    # heatmap：針對每一行做顏色漸層
     def make_heatmap():
         styles = pd.DataFrame("", index=t_raw.index, columns=t_raw.columns)
         for row_name in t_raw.index:
