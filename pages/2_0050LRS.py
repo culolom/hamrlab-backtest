@@ -284,22 +284,23 @@ def render_heat_square(metrics_data):
         "vol": [metrics_data[n]["vol"] for n in names],
     }
     
-    # 產生 HTML
+    # 產生 HTML (移除多餘縮排與換行，確保 Markdown 正確渲染)
     html_blocks = []
     for i, name in enumerate(names):
-        block = f"""
-        <div style="background:rgba(255,255,255,0.05); padding:14px; border-radius:12px; min-width:140px; text-align:center; flex:1;">
-            <div style="font-size:13px;margin-bottom:8px;color:#aaa;font-weight:bold;">{name}</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">
-                <div style="padding:4px 8px;background:{_hs_color(data_arrays['final'])[i]};border-radius:6px;font-size:12px;">資產</div>
-                <div style="padding:4px 8px;background:{_hs_color(data_arrays['cagr'])[i]};border-radius:6px;font-size:12px;">CAGR</div>
-                <div style="padding:4px 8px;background:{_hs_color(data_arrays['sharpe'])[i]};border-radius:6px;font-size:12px;">Sharpe</div>
-                <div style="padding:4px 8px;background:{_hs_color(data_arrays['sortino'])[i]};border-radius:6px;font-size:12px;">Sortino</div>
-                <div style="padding:4px 8px;background:{_hs_color(data_arrays['mdd'], reverse=True)[i]};border-radius:6px;font-size:12px;">MDD</div>
-                <div style="padding:4px 8px;background:{_hs_color(data_arrays['vol'], reverse=True)[i]};border-radius:6px;font-size:12px;">Vol</div>
-            </div>
-        </div>
-        """
+        # 為了避免 Markdown 因為縮排而誤判為程式碼區塊，這裡將 HTML 寫成緊湊格式
+        block = (
+            f'<div style="background:rgba(255,255,255,0.05); padding:14px; border-radius:12px; min-width:140px; text-align:center; flex:1;">'
+            f'<div style="font-size:13px;margin-bottom:8px;color:#aaa;font-weight:bold;">{name}</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">'
+            f'<div style="padding:4px 8px;background:{_hs_color(data_arrays["final"])[i]};border-radius:6px;font-size:12px;">資產</div>'
+            f'<div style="padding:4px 8px;background:{_hs_color(data_arrays["cagr"])[i]};border-radius:6px;font-size:12px;">CAGR</div>'
+            f'<div style="padding:4px 8px;background:{_hs_color(data_arrays["sharpe"])[i]};border-radius:6px;font-size:12px;">Sharpe</div>'
+            f'<div style="padding:4px 8px;background:{_hs_color(data_arrays["sortino"])[i]};border-radius:6px;font-size:12px;">Sortino</div>'
+            f'<div style="padding:4px 8px;background:{_hs_color(data_arrays["mdd"], reverse=True)[i]};border-radius:6px;font-size:12px;">MDD</div>'
+            f'<div style="padding:4px 8px;background:{_hs_color(data_arrays["vol"], reverse=True)[i]};border-radius:6px;font-size:12px;">Vol</div>'
+            f'</div>'
+            f'</div>'
+        )
         html_blocks.append(block)
     
     return f"<div style='display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;'>{''.join(html_blocks)}</div>"
