@@ -433,25 +433,4 @@ if st.button("開始回測 🚀", type="primary", use_container_width=True):
         }
         table_data.append(row)
     
-    df_table = pd.DataFrame(table_data).set_index("策略")
     
-    # 修正步驟 1：先對 DataFrame 應用顏色樣式 (建立 Styler)
-    styler = df_table.style\
-        .background_gradient(cmap="Blues", subset=["💰 期末資產", "📈 CAGR", "⚖️ Sharpe", "🛡️ Sortino", "🌊 Calmar"])\
-        .background_gradient(cmap="Oranges", subset=["📉 MDD", "⚡ 波動率"])
-
-    # 修正步驟 2：再將 Styler 物件傳入 st.dataframe 進行格式化顯示
-    st.dataframe(
-        styler,
-        use_container_width=True,
-        column_config={
-            "💰 期末資產": st.column_config.NumberColumn(format="$%d"),
-            "📈 CAGR": st.column_config.NumberColumn(format="%.2f%%"),
-            "📉 MDD": st.column_config.NumberColumn(format="%.2f%%"),
-            "⚡ 波動率": st.column_config.NumberColumn(format="%.2f%%"),
-            "總報酬率": st.column_config.NumberColumn(format="%.2f%%"),
-            "⚖️ Sharpe": st.column_config.NumberColumn(format="%.2f"),
-            "🛡️ Sortino": st.column_config.NumberColumn(format="%.2f"),
-            "🌊 Calmar": st.column_config.NumberColumn(format="%.2f"),
-        }
-    )
