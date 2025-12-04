@@ -17,7 +17,6 @@ st.set_page_config(
 )
 
 
-
 # ------------------------------------------------------
 # ✅ 正式內容開始
 # ------------------------------------------------------
@@ -293,125 +292,6 @@ else:
     st.info("尚無足夠的歷史資料可計算動能排行。")
 
 st.divider()
-# ==========================================
-# 🔥 功能 2：動能熱力儀表板（1 / 3 / 6 / 12 月報酬）
-# ==========================================
-st.subheader("🔥 動能熱力儀表板（1 / 3 / 6 / 12 月報酬）")
-
-# Heatmap CSS（保證會套用）
-st.markdown("""
-<style>
-.hm-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0 8px;
-    font-size: 0.9rem;
-}
-.hm-table th {
-    padding: 6px;
-    text-align: center;
-    color: #1f2937;
-}
-.hm-table td {
-    padding: 10px 6px;
-    text-align: center;
-    font-weight: 600;
-    border-radius: 8px;
-}
-.hm-asset {
-    text-align: left;
-    font-weight: 700;
-    padding-left: 10px;
-}
-.hm-red    { background:#fee2e2; color:#991b1b; }
-.hm-yellow { background:#fef9c3; color:#92400e; }
-.hm-green  { background:#dcfce7; color:#166534; }
-.hm-strong { background:#bbf7d0; color:#065f46; }
-.hm-gray   { background:#e5e7eb; color:#374151; }
-</style>
-""", unsafe_allow_html=True)
-
-
-# 指定標的
-TARGETS = ["QQQ", "SPY", "0050", "VT", "TLT", "BTC"]
-
-def calc_m(price: pd.Series, days):
-    if price is None or len(price) < days:
-        return None
-    return price.iloc[-1] / price.iloc[-days] - 1
-
-def momentum_cell(v):
-    """報酬 → (CSS class, 顯示文字)"""
-    if v is None:
-        return "hm-gray", "-"
-    pct = v * 100
-    if pct < 0:
-        return "hm-gray", f"{pct:.1f}%"
-    elif pct < 5:
-        return "hm-yellow", f"{pct:.1f}%"
-    elif pct < 15:
-        return "hm-green", f"{pct:.1f}%"
-    else:
-        return "hm-strong", f"{pct:.1f}%"
-
-
-if not files:
-    st.info("未找到 data/*.csv，請先放入價格資料。")
-else:
-    rows = ""
-
-    for sym in TARGETS:
-        csv_path = find_csv_for_symbol(sym, files)
-        if csv_path is None:
-            continue
-
-        price = load_price_series(csv_path)
-        if price is None:
-            continue
-
-        m1  = calc_m(price, 21)
-        m3  = calc_m(price, 63)
-        m6  = calc_m(price, 126)
-        m12 = calc_m(price, 252)
-
-        c1,  t1  = momentum_cell(m1)
-        c3,  t3  = momentum_cell(m3)
-        c6,  t6  = momentum_cell(m6)
-        c12, t12 = momentum_cell(m12)
-
-        rows += f"""
-        <tr>
-            <td class="hm-asset">{sym}</td>
-            <td class="{c1}">{t1}</td>
-            <td class="{c3}">{t3}</td>
-            <td class="{c6}">{t6}</td>
-            <td class="{c12}">{t12}</td>
-        </tr>
-        """
-
-    # 用完整 HTML 包住，避免 Streamlit 分段截斷
-    heatmap_html = f"""
-    <table class="hm-table">
-        <thead>
-            <tr>
-                <th style="text-align:left;">標的</th>
-                <th>1M</th>
-                <th>3M</th>
-                <th>6M</th>
-                <th>12M</th>
-            </tr>
-        </thead>
-        <tbody>
-            {rows}
-        </tbody>
-    </table>
-    """
-
-    st.markdown(heatmap_html, unsafe_allow_html=True)
-
-
-st.caption("🟩 越綠代表動能越強；⬜ 越灰代表動能偏弱或為負。")
-
 
 # ==========================================
 # 🛠️ 策略定義區
