@@ -1,5 +1,5 @@
 ###############################################################
-# app.py — 0050LRS 回測系統 (Pro 美化版)
+# app.py — 0050LRS 回測系統 (Pro 深色模式完美支援版)
 ###############################################################
 
 import os
@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 import matplotlib
 import matplotlib.font_manager as fm
-import matplotlib.colors as mcolors # 新增：用於色階計算
+import matplotlib.colors as mcolors
 import plotly.graph_objects as go
 from pathlib import Path
 
@@ -30,7 +30,7 @@ else:
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 ###############################################################
-# Streamlit 頁面設定與全域 CSS 美化
+# Streamlit 頁面設定與全域 CSS 美化 (支援 Dark Mode)
 ###############################################################
 
 st.set_page_config(
@@ -39,7 +39,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# ⬇⬇⬇ CSS 美化區塊 ⬇⬇⬇
+# ⬇⬇⬇ CSS 美化區塊 (已修改為適應深色模式) ⬇⬇⬇
 st.markdown(
     """
     <style>
@@ -51,13 +51,13 @@ st.markdown(
         }
         h1, h2, h3 {
             font-weight: 700;
-            color: #2c3e50;
+            color: var(--text-color); /* 自動適應文字顏色 */
         }
         
-        /* 2. KPI 指標區塊卡片化 */
+        /* 2. KPI 指標區塊卡片化 (適應 Dark Mode) */
         [data-testid="stMetric"] {
-            background-color: #ffffff;
-            border: 1px solid #e9ecef;
+            background-color: var(--secondary-background-color); /* 自動切換淺灰/深灰 */
+            border: 1px solid rgba(128, 128, 128, 0.2); /* 微弱邊框 */
             padding: 15px 20px;
             border-radius: 10px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.05);
@@ -66,14 +66,16 @@ st.markdown(
         [data-testid="stMetric"]:hover {
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             transform: translateY(-2px);
+            border-color: rgba(128, 128, 128, 0.5);
         }
         [data-testid="stMetricLabel"] {
             font-size: 0.9rem;
-            color: #6c757d;
+            color: var(--text-color);
+            opacity: 0.7;
         }
         [data-testid="stMetricValue"] {
             font-weight: 700;
-            color: #2c3e50;
+            color: var(--text-color);
         }
 
         /* 3. Tabs 樣式優化 */
@@ -83,13 +85,15 @@ st.markdown(
         .stTabs [data-baseweb="tab"] {
             height: 40px;
             border-radius: 8px;
-            background-color: #f8f9fa;
-            border: none;
+            background-color: var(--secondary-background-color);
+            border: 1px solid rgba(128, 128, 128, 0.1);
             font-weight: 500;
+            color: var(--text-color);
         }
         .stTabs [aria-selected="true"] {
-            background-color: #e3f2fd !important;
-            color: #1976d2 !important;
+            background-color: rgba(41, 128, 185, 0.1) !important;
+            color: #2980b9 !important;
+            border: 1px solid #2980b9 !important;
         }
 
         /* 4. 表格容器樣式 */
@@ -97,7 +101,7 @@ st.markdown(
             border-radius: 12px; 
             overflow: hidden; 
             box-shadow: 0 4px 12px rgba(0,0,0,0.08); 
-            border: 1px solid #e9ecef; 
+            border: 1px solid rgba(128, 128, 128, 0.2);
             margin-top: 20px;
         }
     </style>
@@ -117,7 +121,7 @@ st.markdown(
     <span style='color:#95a5a6'>●</span> 原型 ETF Buy & Hold (0050/006208)<br>
     <span style='color:#e67e22'>●</span> 槓桿 ETF Buy & Hold (正2系列)<br>
     <span style='color:#2980b9'>●</span> 槓桿 ETF LRS (200MA 趨勢策略)<br>
-    <small style='color:#7f8c8d'>（資料來源：GitHub Actions 自動更新之 CSV）</small>
+    <small style='color:var(--text-color); opacity:0.6;'>（資料來源：GitHub Actions 自動更新之 CSV）</small>
     """,
     unsafe_allow_html=True,
 )
@@ -320,7 +324,7 @@ if st.button("🚀 開始回測", type="primary"):
     trade_count = int((df["Signal"] != 0).sum())
 
     ###############################################################
-    # 圖表呈現
+    # 圖表呈現 (使用 Plotly White Template 但背景透明化)
     ###############################################################
 
     st.markdown("<h3>📈 價格走勢與交易訊號</h3>", unsafe_allow_html=True)
@@ -334,7 +338,7 @@ if st.button("🚀 開始回測", type="primary"):
     if not sells.empty:
         fig_price.add_trace(go.Scatter(x=sells.index, y=sells["Price_base"], mode="markers", name="賣出", marker=dict(color="red", size=10, symbol="triangle-down")))
     
-    fig_price.update_layout(template="plotly_white", height=400, margin=dict(l=20, r=20, t=20, b=20))
+    fig_price.update_layout(template="plotly_white", height=400, margin=dict(l=20, r=20, t=20, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig_price, use_container_width=True)
 
     st.markdown("<h3>📊 策略績效深度分析</h3>", unsafe_allow_html=True)
@@ -346,7 +350,7 @@ if st.button("🚀 開始回測", type="primary"):
         fig_eq.add_trace(go.Scatter(x=df.index, y=df["Pct_Lev"], name="槓桿 BH", line=dict(color=COLOR_LEV, width=2)))
         fig_eq.add_trace(go.Scatter(x=df.index, y=df["Pct_LRS"], name="LRS 策略", line=dict(color=COLOR_LRS, width=3), fill='tozeroy', fillcolor='rgba(41, 128, 185, 0.1)'))
         
-        fig_eq.update_layout(template="plotly_white", height=450, hovermode="x unified", yaxis=dict(tickformat=".0%", title="累積報酬"), legend=dict(orientation="h", y=1.02, x=1, xanchor="right"))
+        fig_eq.update_layout(template="plotly_white", height=450, hovermode="x unified", yaxis=dict(tickformat=".0%", title="累積報酬"), legend=dict(orientation="h", y=1.02, x=1, xanchor="right"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_eq, use_container_width=True)
 
     with tab_dd:
@@ -358,12 +362,11 @@ if st.button("🚀 開始回測", type="primary"):
         fig_dd.add_trace(go.Scatter(x=df.index, y=dd_base, name="原型 BH", line=dict(color=COLOR_BASE, width=1)))
         fig_dd.add_trace(go.Scatter(x=df.index, y=dd_lev, name="槓桿 BH", line=dict(color=COLOR_LEV, width=1)))
         fig_dd.add_trace(go.Scatter(x=df.index, y=dd_lrs, name="LRS 策略", line=dict(color=COLOR_LRS, width=1), fill="tozeroy"))
-        fig_dd.update_layout(template="plotly_white", height=400, yaxis=dict(title="回撤幅度 %"))
+        fig_dd.update_layout(template="plotly_white", height=400, yaxis=dict(title="回撤幅度 %"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_dd, use_container_width=True)
 
     with tab_radar:
         cats = ["CAGR", "Sharpe", "Sortino", "-MDD", "Inv-Vol"]
-        # 用 nz 避免 nan
         v_lrs = [nz(cagr_lrs), nz(sharpe_lrs), nz(sortino_lrs), nz(-mdd_lrs), nz(-vol_lrs)]
         v_lev = [nz(cagr_lev), nz(sharpe_lev), nz(sortino_lev), nz(-mdd_lev), nz(-vol_lev)]
         v_base = [nz(cagr_base), nz(sharpe_base), nz(sortino_base), nz(-mdd_base), nz(-vol_base)]
@@ -372,7 +375,7 @@ if st.button("🚀 開始回測", type="primary"):
         fig_r.add_trace(go.Scatterpolar(r=v_lrs, theta=cats, fill='toself', name='LRS', line_color=COLOR_LRS))
         fig_r.add_trace(go.Scatterpolar(r=v_lev, theta=cats, fill='toself', name='槓桿 BH', line_color=COLOR_LEV))
         fig_r.add_trace(go.Scatterpolar(r=v_base, theta=cats, fill='toself', name='原型 BH', line_color=COLOR_BASE))
-        fig_r.update_layout(template="plotly_white", height=400, polar=dict(radialaxis=dict(visible=True)))
+        fig_r.update_layout(template="plotly_white", height=400, polar=dict(radialaxis=dict(visible=True)), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_r, use_container_width=True)
 
     with tab_hist:
@@ -380,11 +383,11 @@ if st.button("🚀 開始回測", type="primary"):
         fig_h.add_trace(go.Histogram(x=df["Return_base"]*100, name="原型 BH", marker_color=COLOR_BASE, opacity=0.6))
         fig_h.add_trace(go.Histogram(x=df["Return_lev"]*100, name="槓桿 BH", marker_color=COLOR_LEV, opacity=0.6))
         fig_h.add_trace(go.Histogram(x=df["Return_LRS"]*100, name="LRS", marker_color=COLOR_LRS, opacity=0.7))
-        fig_h.update_layout(barmode='overlay', template="plotly_white", height=400)
+        fig_h.update_layout(barmode='overlay', template="plotly_white", height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_h, use_container_width=True)
 
     ###############################################################
-    # KPI 與 直式表格
+    # KPI 與 直式表格 (Dark Mode 修復)
     ###############################################################
     
     # KPI Summary
@@ -454,7 +457,7 @@ if st.button("🚀 開始回測", type="primary"):
         if idx_name in df_display.index:
             df_display.loc[idx_name] = df_display.loc[idx_name].apply(func)
 
-    # 4. 定義樣式與柔和熱力圖
+    # 4. 定義樣式與柔和熱力圖 (移除強制文字顏色)
     custom_cmap = mcolors.LinearSegmentedColormap.from_list("soft_ryg", ["#e74c3c", "#f1c40f", "#2ecc71"])
 
     def get_color_soft(val, vmin, vmax, invert=False):
@@ -463,20 +466,31 @@ if st.button("🚀 開始回測", type="primary"):
         else: norm = (val - vmin) / (vmax - vmin)
         if invert: norm = 1 - norm
         rgba = custom_cmap(norm)
-        return f"background-color: rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, 0.25); color: #2c3e50; font-weight: 600;"
+        # 不再強制 color: #2c3e50，讓 CSS 變數決定黑/白字
+        return f"background-color: rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, 0.25); font-weight: 600;"
 
     styled = df_display.style
-    # 基礎 CSS
+    # 基礎 CSS (使用變數適應深淺色)
     styled = styled.set_table_attributes('class="table-finance"')
     styled = styled.set_properties(**{
-        "text-align": "center", "padding": "12px 10px", "border-bottom": "1px solid #f1f3f5",
+        "text-align": "center", "padding": "12px 10px", "border-bottom": "1px solid rgba(128, 128, 128, 0.2)",
         "font-family": "Helvetica Neue, Arial, sans-serif", "font-size": "15px",
     })
     # 表頭與第一欄樣式
     styled = styled.set_table_styles([
-        {"selector": "th", "props": [("text-align", "center"), ("background-color", "#f8f9fa"), ("color", "#2c3e50"), ("font-weight", "700"), ("font-size", "15px"), ("padding", "12px")]},
-        {"selector": "th.index_name", "props": [("background-color", "#ffffff"), ("color", "#7f8c8d"), ("text-align", "right"), ("border-right", "2px solid #e9ecef")]},
-        {"selector": "tbody tr:hover", "props": [("background-color", "#f8f9fa")]},
+        {"selector": "th", "props": [
+            ("text-align", "center"), 
+            ("background-color", "var(--secondary-background-color)"), # 自動變換背景
+            ("color", "var(--text-color)"), # 自動變換文字
+            ("font-weight", "700"), ("font-size", "15px"), ("padding", "12px")
+        ]},
+        {"selector": "th.index_name", "props": [
+            ("background-color", "var(--background-color)"), # 主背景色
+            ("color", "var(--text-color)"), 
+            ("text-align", "right"), 
+            ("border-right", "2px solid rgba(128, 128, 128, 0.2)")
+        ]},
+        {"selector": "tbody tr:hover", "props": [("background-color", "rgba(128, 128, 128, 0.1)")]},
     ])
 
     # 5. 應用熱力圖
