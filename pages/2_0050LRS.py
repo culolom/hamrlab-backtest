@@ -695,12 +695,13 @@ if st.button("開始回測 🚀"):
         },
     }
     
+st.markdown("### 🔥 Heat Square 強弱矩陣")
+
+# Heat Square —— 一定要放在 FULL WIDTH 區塊
+hs_container = st.container()
+with hs_container:
     heat_html = render_heat_square(metrics)
-    
-    # 🔥 專屬 HTML 容器，隔離掉前後所有 Streamlit 元件
-    heat_container = st.container()
-    with heat_container:
-        st.markdown(heat_html, unsafe_allow_html=True)
+    st.markdown(heat_html, unsafe_allow_html=True)
 
 
     ###############################################################
