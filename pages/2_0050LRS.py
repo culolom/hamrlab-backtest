@@ -619,9 +619,10 @@ if st.button("開始回測 🚀"):
         },
     }
     
+    st.markdown("### 🔥 Heat Square 強弱矩陣（策略雷達）", unsafe_allow_html=True)
+    
     heat_html = render_heat_square(metrics)
     
-    # 🔥 必須外面再包一層 <div>，Streamlit 才不會 escape HTML
     st.markdown(f"<div>{heat_html}</div>", unsafe_allow_html=True)
 
 
