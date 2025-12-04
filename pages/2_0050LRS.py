@@ -417,20 +417,28 @@ if st.button("開始回測 🚀"):
     with row1[3]:
         st.metric("最大回撤（LRS）", format_percent(mdd_lrs),
                   f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
-
-
-
     ###############################################################
-    # 🚀 升級版策略比較表格（轉置 + 最佳策略高亮 + 顏色標籤）
+    # 升級版策略比較（轉置表 + 最佳策略高亮 + Heatmap）
     ###############################################################
     
-
-    import numpy as np
     import pandas as pd
+    import numpy as np
     from matplotlib import cm
-    import pandas.io.formats.style
     
-    # -------- 原始表格資料（不要動）--------
+    def fmt_money(x):
+        return f"{x:,.0f} 元"
+    
+    def fmt_pct(x):
+        return f"{x:.2%}"
+    
+    def fmt_num(x):
+        return f"{x:.2f}"
+    
+    def fmt_int(x):
+        return "—" if (pd.isna(x) or x == 0) else str(int(x))
+    
+    
+    # ====== 1) Raw Data ======
     raw_table = pd.DataFrame([
         {
             "策略": f"{lev_label} LRS 槓桿策略",
@@ -468,116 +476,79 @@ if st.button("開始回測 🚀"):
             "Sortino": sortino_base,
             "交易次數": np.nan,
         },
-    ]).set_index("策略")
+    ]).reset_index(drop=True)
     
     
-    # ======================================================
-    # 1️⃣ 格式化（加 %、加貨幣、變數字風格）
-    # ======================================================
-    formatted = raw_table.copy()
-    formatted["期末資產"] = formatted["期末資產"].apply(fmt_money)
-    formatted["總報酬率"] = formatted["總報酬率"].apply(fmt_pct)
-    formatted["CAGR（年化）"] = formatted["CAGR（年化）"].apply(fmt_pct)
-    formatted["Calmar Ratio"] = formatted["Calmar Ratio"].apply(fmt_num)
-    formatted["最大回撤（MDD）"] = formatted["最大回撤（MDD）"].apply(fmt_pct)
-    formatted["年化波動"] = formatted["年化波動"].apply(fmt_pct)
-    formatted["Sharpe"] = formatted["Sharpe"].apply(fmt_num)
-    formatted["Sortino"] = formatted["Sortino"].apply(fmt_num)
-    formatted["交易次數"] = formatted["交易次數"].apply(fmt_int)
+    # ====== 2) 格式化 ======
+    fmt_table = raw_table.copy()
     
-    # ---- 轉置（重點！） ----
-    t_raw = raw_table.T
-    t_fmt = formatted.T
-    t_fmt.index.name = "指標"
+    fmt_table["期末資產"] = fmt_table["期末資產"].apply(fmt_money)
+    fmt_table["總報酬率"] = fmt_table["總報酬率"].apply(fmt_pct)
+    fmt_table["CAGR（年化）"] = fmt_table["CAGR（年化）"].apply(fmt_pct)
+    fmt_table["Calmar Ratio"] = fmt_table["Calmar Ratio"].apply(fmt_num)
+    fmt_table["最大回撤（MDD）"] = fmt_table["最大回撤（MDD）"].apply(fmt_pct)
+    fmt_table["年化波動"] = fmt_table["年化波動"].apply(fmt_pct)
+    fmt_table["Sharpe"] = fmt_table["Sharpe"].apply(fmt_num)
+    fmt_table["Sortino"] = fmt_table["Sortino"].apply(fmt_num)
+    fmt_table["交易次數"] = fmt_table["交易次數"].apply(fmt_int)
     
     
-    # ======================================================
-    # 2️⃣ 欄名顏色標籤（策略顏色）
-    # ======================================================
-    column_color = {
-        f"{lev_label} LRS 槓桿策略": "#1d6ff2",   # 藍
-        f"{lev_label} BH（槓桿）":    "#9333ea",   # 紫
-        f"{base_label} BH（原型）":   "#16a34a",   # 綠
-    }
+    # ====== 3) 轉置 ======
+    t_raw = raw_table.set_index("策略").T
+    t_fmt = fmt_table.set_index("策略").T
     
     
-    # ======================================================
-    # 3️⃣ 每列最佳策略高亮
-    # ======================================================
-    
-    # 哪些指標越低越好
-    lower_better = ["最大回撤（MDD）", "年化波動"]
-    
-    def highlight_best(row):
-        vals = t_raw.loc[row.name]
-    
-        # 判斷找最大還是最小
-        if row.name in lower_better:
-            best = vals.idxmin()
+    # ====== 4) highlight_best（逐列最佳策略） ======
+    def highlight_best(s):
+        """每列找最大值（或最小值）並加綠色 highlight"""
+        # 最大回撤（MDD）要找最小值才是好的
+        if s.name == "最大回撤（MDD）":
+            best = s.astype(float).idxmin()
         else:
-            best = vals.idxmax()
+            best = s.replace("—", np.nan).astype(float).idxmax()
     
-        return [
-            "font-weight: 700; background-color: #d1fae5;" if col == best else ""
-            for col in vals.index
-        ]
+        return [ "background-color: #ccf7d7" if idx == best else "" for idx in s.index ]
     
     
-    # ======================================================
-    # 4️⃣ Heatmap 套色
-    # ======================================================
-    def colormap(series, cmap_name="RdYlGn"):
-        s = series.astype(float).fillna(0.0)
+    # ====== 5) soft heatmap（淡淡背景，不蓋掉 highlight） ======
+    def soft_heatmap(series, cmap_name="BuGn"):
+        s = series.replace("—", np.nan).astype(float).fillna(0.0)
         if s.max() - s.min() < 1e-9:
             norm = (s - s.min())
         else:
             norm = (s - s.min()) / (s.max() - s.min())
+    
         cmap = cm.get_cmap(cmap_name)
-        return norm.map(lambda x: f"background-color: rgba{cmap(x, 0.18)}")
+    
+        # 🔥 透明度調低，避免蓋掉 highlight_best
+        return norm.map(lambda x: f"background-color: rgba{cmap(x, 0.10)}")
     
     
-    # ======================================================
-    # 5️⃣ 套用到 Styler
-    # ======================================================
+    # ====== 6) 套用 Styler ======
     styled = t_fmt.style
     
-    # --- 欄名加顏色 ---
-    styled = styled.set_table_styles(
-        [
-            {
-                "selector": f"th.col_heading.level0.col{i}",
-                "props": [("color", color), ("font-weight", "700")]
-            }
-            for i, color in enumerate(column_color.values())
-        ]
-    )
-    
-    # --- Hover 效果 ---
+    # 表頭變藍色 + 置中
+    styled = styled.set_properties(**{"text-align": "center"})
     styled = styled.set_table_styles([
-        {"selector": "tbody tr:hover", "props": [("background-color", "#f0f8ff")]},
+        {"selector": "th", "props": [("text-align", "center"), ("color", "#1f77d0"), ("font-weight", "bold")]}
     ])
     
-    
-    # --- Heatmap（正確版，不會 KeyError） ---
-    for col in t_raw.columns:
-        styled = styled.apply(
-            lambda _: colormap(t_raw[col]),
-            subset=pd.IndexSlice[:, col]  # 🔥 整欄套用，不會錯
-        )
-    
-    # --- 最佳策略高亮（逐列） ---
+    # 套用 highlight_best
     styled = styled.apply(highlight_best, axis=1)
     
-    # --- 指標列加粗 ---
-    styled = styled.set_properties(subset=pd.IndexSlice[t_fmt.index, :], **{
-        "font-weight": "700"
-    })
+    # Heatmap：依欄逐一加淡淡背景
+    for col in t_raw.columns:
+        styled = styled.apply(
+            lambda _: soft_heatmap(t_raw[col]),
+            subset=pd.IndexSlice[:, col]
+        )
     
-    # ======================================================
-    # 6️⃣ 最終輸出
-    # ======================================================
+    styled = styled.hide(axis="index")
+    
     st.markdown("### 📊 策略比較（升級版轉置表格）")
     st.write(styled.to_html(), unsafe_allow_html=True)
 
 
+
+    
     ###############################################################
