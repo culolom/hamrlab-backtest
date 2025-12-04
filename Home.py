@@ -293,6 +293,120 @@ else:
     st.info("尚無足夠的歷史資料可計算動能排行。")
 
 st.divider()
+# ==========================================
+# 🔥 功能 2：動能熱力格（1 / 3 / 6 / 12 月）
+# ==========================================
+st.subheader("🔥 動能熱力儀表板（1 / 3 / 6 / 12 月報酬）")
+
+# Heatmap 樣式（直接插入 CSS）
+st.markdown("""
+<style>
+.momentum-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 6px;
+    font-size: 0.9rem;
+}
+.momentum-table th {
+    text-align: center;
+    padding: 6px;
+    color: #1f2937;
+}
+.momentum-table td {
+    text-align: center;
+    padding: 10px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+    color: #111;
+}
+.hm-red { background:#fee2e2; color:#991b1b; }
+.hm-yellow { background:#fef9c3; color:#92400e; }
+.hm-green { background:#dcfce7; color:#166534; }
+.hm-strong { background:#bbf7d0; color:#065f46; }
+.hm-gray { background:#e5e7eb; color:#374151; }
+.asset-col {
+    text-align:left;
+    font-weight:700;
+    padding-left:10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# 使用的標的
+TARGETS = ["QQQ", "SPY", "0050", "VT", "TLT", "BTC"]
+
+def calc_m(price: pd.Series, days):
+    if price is None or len(price) < days:
+        return None
+    return price.iloc[-1] / price.iloc[-days] - 1
+
+def momentum_color(v):
+    """根據報酬率給顏色 class"""
+    if v is None:
+        return "hm-gray", "-"
+    if v < 0:
+        return "hm-gray", f"{v*100:.1f}%"
+    if v < 0.05:
+        return "hm-yellow", f"{v*100:.1f}%"
+    if v < 0.15:
+        return "hm-green", f"{v*100:.1f}%"
+    return "hm-strong", f"{v*100:.1f}%"  # 強勢 > 15%
+
+# 如果沒有資料
+if not files:
+    st.info("未找到任何 data/*.csv，請先放入價格資料。")
+else:
+    rows_html = ""
+
+    for sym in TARGETS:
+        csv_path = find_csv_for_symbol(sym, files)
+        if csv_path is None:
+            continue
+
+        price = load_price_series(csv_path)
+        if price is None:
+            continue
+
+        m1 = calc_m(price, 21)
+        m3 = calc_m(price, 63)
+        m6 = calc_m(price, 126)
+        m12 = calc_m(price, 252)
+
+        c1, t1 = momentum_color(m1)
+        c3, t3 = momentum_color(m3)
+        c6, t6 = momentum_color(m6)
+        c12, t12 = momentum_color(m12)
+
+        rows_html += f"""
+        <tr>
+            <td class="asset-col">{sym}</td>
+            <td class="{c1}">{t1}</td>
+            <td class="{c3}">{t3}</td>
+            <td class="{c6}">{t6}</td>
+            <td class="{c12}">{t12}</td>
+        </tr>
+        """
+
+    table_html = f"""
+    <table class="momentum-table">
+        <thead>
+            <tr>
+                <th style="text-align:left;">標的</th>
+                <th>1M</th>
+                <th>3M</th>
+                <th>6M</th>
+                <th>12M</th>
+            </tr>
+        </thead>
+        <tbody>
+            {rows_html}
+        </tbody>
+    </table>
+    """
+
+    st.markdown(table_html, unsafe_allow_html=True)
+
+st.caption("🟩 越綠代表動能越強；🟥 越灰代表動能偏弱或為負。")
 
 # ==========================================
 # 🛠️ 策略定義區
