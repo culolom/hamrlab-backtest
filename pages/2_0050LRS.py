@@ -418,10 +418,17 @@ if st.button("開始回測 🚀"):
         st.metric("最大回撤（LRS）", format_percent(mdd_lrs),
                   f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
 
+
+
     ###############################################################
-    # 完整比較表格（轉置 + Heatmap 正確版）
+    # 🚀 升級版策略比較表格（轉置 + 最佳策略高亮 + 顏色標籤）
     ###############################################################
     
+    import numpy as np
+    import pandas as pd
+    from matplotlib import cm
+    
+    # --- 原始表格 ---
     raw_table = pd.DataFrame([
         {
             "策略": f"{lev_label} LRS 槓桿策略",
@@ -461,8 +468,9 @@ if st.button("開始回測 🚀"):
         },
     ]).set_index("策略")
     
-    
-    # ---- 格式化顯示版本 ----
+    # ======================================================
+    # 1️⃣ 格式化成顯示用版本（加 %、加 $, 數字格式）
+    # ======================================================
     formatted = raw_table.copy()
     formatted["期末資產"] = formatted["期末資產"].apply(fmt_money)
     formatted["總報酬率"] = formatted["總報酬率"].apply(fmt_pct)
@@ -474,15 +482,47 @@ if st.button("開始回測 🚀"):
     formatted["Sortino"] = formatted["Sortino"].apply(fmt_num)
     formatted["交易次數"] = formatted["交易次數"].apply(fmt_int)
     
-    # ---- 轉置（Transpose）----
-    t_raw = raw_table.T              # 計算 heatmap 用
-    t_fmt = formatted.T              # 顯示用
+    # --- 轉置 ---
+    t_raw = raw_table.T
+    t_fmt = formatted.T
     t_fmt.index.name = "指標"
     
+    # ======================================================
+    # 2️⃣ 欄位顏色標籤（策略名字上色）
+    # ======================================================
+    column_color = {
+        f"{lev_label} LRS 槓桿策略": "#1d6ff2",   # 藍
+        f"{lev_label} BH（槓桿）":    "#9333ea",   # 紫
+        f"{base_label} BH（原型）":    "#16a34a",   # 綠
+    }
     
-    # ---- Heatmap 套色 ----
-    from matplotlib import cm
+    def header_style(col):
+        return f"color: {column_color.get(col, '#000')}; font-weight: 700;"
     
+    # ======================================================
+    # 3️⃣ 每列自動找最佳策略（高亮顯示）
+    # ======================================================
+    
+    # 哪些指標是「越低越好」
+    lower_better = ["最大回撤（MDD）", "年化波動"]
+    
+    def highlight_best(row):
+        """找出最佳策略（高亮顯示 + 粗體）"""
+        vals = t_raw.loc[row.name]
+    
+        if row.name in lower_better:
+            best = vals.idxmin()
+        else:
+            best = vals.idxmax()
+    
+        return [
+            "font-weight:700; background-color:#d1fae5;" if col == best else ""
+            for col in vals.index
+        ]
+    
+    # ======================================================
+    # 4️⃣ Heatmap 區（淡化用）
+    # ======================================================
     def colormap(series, cmap_name="RdYlGn"):
         s = series.astype(float).fillna(0.0)
         if s.max() - s.min() < 1e-9:
@@ -490,27 +530,37 @@ if st.button("開始回測 🚀"):
         else:
             norm = (s - s.min()) / (s.max() - s.min())
         cmap = cm.get_cmap(cmap_name)
-        return norm.map(lambda x: f"background-color: rgba{cmap(x)}")
+        return norm.map(lambda x: f"background-color: rgba{cmap(x, 0.15)}")
     
-    
-    # Styler
+    # ======================================================
+    # 5️⃣ 套用到 Styler
+    # ======================================================
     styled = t_fmt.style
     
-    # 置中
-    styled = styled.set_properties(**{"text-align": "center"})
+    # 標題顏色
+    styled = styled.set_table_styles(
+        [{"selector": f"th.col_heading.level0.col{i}",
+          "props": [("color", header_style(col))]} 
+         for i, col in enumerate(t_fmt.columns)]
+    )
+    
+    # hover + 基礎樣式
     styled = styled.set_table_styles([
         {"selector": "tbody tr:hover", "props": [("background-color", "#f0f8ff")]},
-        {"selector": "th", "props": [("text-align", "center")]}
+        {"selector": "th", "props": [("text-align", "center"), ("font-size","15px")]},
     ])
     
-    # Heatmap（逐欄）
+    # Heatmap + 最佳策略標示
     for col in t_raw.columns:
         styled = styled.apply(lambda s: colormap(t_raw[col]), subset=[col])
     
-    # 套用格式 + 隱藏 index
-    styled = styled.hide(axis="columns")   # 不顯示欄名
-    styled = styled.set_properties(subset=t_fmt.columns, **{"min-width": "120px"})
+    styled = styled.apply(highlight_best, axis=1)
     
-    # 輸出
-    st.markdown("### 📊 策略比較（轉置表格）")
+    # Index 样式
+    styled = styled.set_properties(subset=t_fmt.index, **{"font-weight": "700"})
+    
+    # 整理輸出
+    st.markdown("### 📊 策略比較（升級版轉置表格）")
     st.write(styled.to_html(), unsafe_allow_html=True)
+
+    ###############################################################
