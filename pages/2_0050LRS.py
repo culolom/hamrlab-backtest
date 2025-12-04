@@ -637,7 +637,7 @@ if st.button("開始回測 🚀"):
     ###############################################################
     # Heat Square：三策略強弱矩陣
     ###############################################################
-
+    
     metrics = {
         f"{lev_label} LRS 槓桿策略": {
             "final": capital_lrs_final,
@@ -664,8 +664,9 @@ if st.button("開始回測 🚀"):
             "vol": vol_base,
         },
     }
-
-    render_heat_square(metrics)
+    
+    heat_html = render_heat_square(metrics)
+    st.markdown(heat_html, unsafe_allow_html=True)
 
     ###############################################################
     # 轉置表格 + highlight_best + heatmap
