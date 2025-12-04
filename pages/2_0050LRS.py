@@ -510,33 +510,3 @@ if st.button("開始回測 🚀"):
     styled = styled.hide(axis="index")
 
     st.write(styled.to_html(), unsafe_allow_html=True)
-    ###############################################################
-    # Footer
-    ###############################################################
-
-    st.markdown(
-        """
-<div style="
-    margin-top: 20px;
-    padding: 18px 22px;
-    border-left: 4px solid #4A90E2;
-    background: rgba(0,0,0,0.03);
-    border-radius: 6px;
-    font-size: 15px;
-    line-height: 1.7;
-">
-
-<h4>📘 指標怎麼看？（快速理解版）</h4>
-
-<b>CAGR（年化報酬）</b>：一年平均賺多少，是長期投資最重要的指標。<br>
-<b>總報酬率</b>：整段時間一共賺多少。<br>
-<b>Sharpe Ratio</b>：承受一單位波動，能換到多少報酬。越高越穩定。<br>
-<b>Sortino Ratio</b>：只看「跌」的波動，越高越抗跌。<br>
-<b>最大回撤（MDD）</b>：最慘跌到多深。越小越好。<br>
-<b>年化波動</b>：每天跳來跳去的程度。越低越舒服。<br>
-<b>Calmar Ratio</b>：把報酬和回撤放一起看，越高代表越有效率。<br>
-
-</div>
-        """,
-        unsafe_allow_html=True,
-    )
