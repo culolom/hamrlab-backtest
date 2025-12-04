@@ -81,79 +81,54 @@ st.divider()
 # ==========================================
 # 📊 功能 1：市場即時儀表板 (戰情室核心)
 # ==========================================
-st.markdown("### 🚥 市場多空訊號 (最新收盤)")
+st.subheader("📌 今日市場摘要")
 
-def get_signal_status(symbol_csv, window=200):
-    """讀取 CSV 並判斷目前是多頭還是空頭"""
-    csv_path = os.path.join("data", symbol_csv)
-    
-    if not os.path.exists(csv_path):
-        return None, None, None, "無資料"
+summary_cols = st.columns(4)
 
-    try:
-        df = pd.read_csv(csv_path)
-        col_price = "Adj Close" if "Adj Close" in df.columns else "Close"
-        
-        df = df.tail(300).copy()
-        df[col_price] = pd.to_numeric(df[col_price], errors='coerce')
-        df["MA_200"] = df[col_price].rolling(window=window).mean()
-        
-        last_row = df.iloc[-1]
-        price = last_row[col_price]
-        ma = last_row["MA_200"]
-        
-        if pd.isna(ma):
-            return price, None, "資料不足", "off"
-            
-        if price > ma:
-            status = "🟢 多頭 (持有)"
-            delta_color = "normal"
-        else:
-            status = "🔴 空頭 (空手)"
-            delta_color = "inverse"
-            
-        return price, ma, status, delta_color
-        
-    except Exception as e:
-        return None, None, None, "讀取錯誤"
+# 定義幾個常見指標／資產（可依你的 CSV 命名調整）
+ASSET_CONFIG = [
+    {"label": "美股科技", "symbol": "QQQ"},
+    {"label": "美股大盤", "symbol": "SPY"},
+    {"label": "台股大盤", "symbol": "0050"},
+    {"label": "全球股市", "symbol": "VT"},
+    {"label": "長天期債券", "symbol": "TLT"},
+    {"label": "比特幣", "symbol": "BTC"},
+]
 
-m1, m2, m3 = st.columns(3)
-
-with m1:
-    price, ma, status, color = get_signal_status("QQQ.csv")
-    if price:
-        st.metric(
-            label="🇺🇸 QQQ 納斯達克",
-            value=f"${price:.2f}",
-            delta=status,
-            delta_color=color if color == "normal" else "inverse"
-        )
-        if ma: st.caption(f"200MA: ${ma:.2f}")
+def classify_trend(price: pd.Series):
+    """用 200 日 + 價格位置簡易判斷趨勢。"""
+    if price is None or len(price) < 200:
+        return "資料不足", "⬜"
+    ma200 = price.rolling(200).mean().iloc[-1]
+    last = price.iloc[-1]
+    if pd.isna(ma200) or pd.isna(last):
+        return "資料不足", "⬜"
+    diff = (last / ma200) - 1.0
+    if diff > 0.05:
+        return "多頭", "🟢"
+    elif diff > 0:
+        return "偏多", "🟡"
+    elif diff > -0.05:
+        return "偏空", "🟠"
     else:
-        st.info("尚無 QQQ 數據")
+        return "空頭", "🔴"
 
-with m2:
-    price, ma, status, color = get_signal_status("0050.csv") 
-    if price:
-        st.metric(
-            label="🇹🇼 0050 台灣五十",
-            value=f"{price:.2f}",
-            delta=status,
-            delta_color=color if color == "normal" else "inverse"
-        )
-        if ma: st.caption(f"200MA: {ma:.2f}")
-    else:
-        st.info("尚無 0050 數據")
+if not files:
+    st.info("目前找不到任何 CSV 數據檔案，動能儀表板會先顯示占位內容。請在 data 資料夾放入價格歷史 CSV。")
+else:
+    for i, asset in enumerate(ASSET_CONFIG[:4]):  # 先顯示 4 個重點
+        with summary_cols[i]:
+            csv_path = find_csv_for_symbol(asset["symbol"], files)
+            if csv_path is None:
+                st.metric(asset["label"], "資料不存在", "⬜")
+            else:
+                price = load_price_series(csv_path)
+                trend_text, trend_icon = classify_trend(price)
+                st.metric(asset["label"], trend_text, trend_icon)
 
-with m3:
-    st.container(border=True).markdown("""
-    **🚧 更多訊號開發中**
-    比特幣 (BTC) 與 總體經濟指標
-    即將上線...
-    """)
+st.caption("註：以上為簡易 SMA200 趨勢判讀，只作為戰情室參考，不作為買賣訊號。")
 
-st.divider()
-
+st.markdown("---")
 # ==========================================
 # 🏆 功能 2：本月動能排行榜 (新增功能)
 # ==========================================
