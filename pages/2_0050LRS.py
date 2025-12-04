@@ -38,7 +38,7 @@ st.set_page_config(
     layout="wide",
 )
 st.markdown(
-    "<h1 style='margin-bottom:0.5em;'>📊 0050LRS 槓桿策略回測（CSV 版）</h1>",
+    "<h1 style='margin-bottom:0.5em;'>📊 0050LRS 槓桿策略回測</h1>",
     unsafe_allow_html=True,
 )
 
@@ -412,101 +412,131 @@ if st.button("開始回測 🚀"):
                   f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
 
     ###############################################################
-    # 完整比較表格（Heatmap 正確版）
+    # 完整比較表格（直式轉置版 + 智慧熱力圖）
     ###############################################################
     
+    # 1. 建立原始數據表 (保持數值格式，用於計算顏色)
     raw_table = pd.DataFrame([
         {
-            "策略": f"{lev_label} LRS 槓桿策略",
+            "策略": f"{lev_label} LRS",
             "期末資產": capital_lrs_final,
             "總報酬率": final_ret_lrs,
-            "CAGR（年化）": cagr_lrs,
-            "Calmar Ratio": calmar_lrs,
-            "最大回撤（MDD）": mdd_lrs,
-            "年化波動": vol_lrs,
-            "Sharpe": sharpe_lrs,
-            "Sortino": sortino_lrs,
+            "CAGR (年化)": cagr_lrs,
+            "夏普值 (Sharpe)": sharpe_lrs,
+            "索提諾 (Sortino)": sortino_lrs,
+            "風報比 (Calmar)": calmar_lrs,
+            "最大回撤 (MDD)": mdd_lrs,    # 注意：這裡通常是正數表示 (e.g. 0.3)
+            "年化波動率": vol_lrs,
             "交易次數": trade_count_lrs,
         },
         {
-            "策略": f"{lev_label} BH（槓桿）",
+            "策略": f"{lev_label} BH",
             "期末資產": capital_lev_final,
             "總報酬率": final_ret_lev,
-            "CAGR（年化）": cagr_lev,
-            "Calmar Ratio": calmar_lev,
-            "最大回撤（MDD）": mdd_lev,
-            "年化波動": vol_lev,
-            "Sharpe": sharpe_lev,
-            "Sortino": sortino_lev,
+            "CAGR (年化)": cagr_lev,
+            "夏普值 (Sharpe)": sharpe_lev,
+            "索提諾 (Sortino)": sortino_lev,
+            "風報比 (Calmar)": calmar_lev,
+            "最大回撤 (MDD)": mdd_lev,
+            "年化波動率": vol_lev,
             "交易次數": np.nan,
         },
         {
-            "策略": f"{base_label} BH（原型）",
+            "策略": f"{base_label} BH",
             "期末資產": capital_base_final,
             "總報酬率": final_ret_base,
-            "CAGR（年化）": cagr_base,
-            "Calmar Ratio": calmar_base,
-            "最大回撤（MDD）": mdd_base,
-            "年化波動": vol_base,
-            "Sharpe": sharpe_base,
-            "Sortino": sortino_base,
+            "CAGR (年化)": cagr_base,
+            "夏普值 (Sharpe)": sharpe_base,
+            "索提諾 (Sortino)": sortino_base,
+            "風報比 (Calmar)": calmar_base,
+            "最大回撤 (MDD)": mdd_base,
+            "年化波動率": vol_base,
             "交易次數": np.nan,
         },
-    ]).reset_index(drop=True)
-
-    # --- 格式化表格（顯示用） ---
-    formatted = raw_table.copy()
-    formatted["期末資產"] = formatted["期末資產"].apply(fmt_money)
-    formatted["總報酬率"] = formatted["總報酬率"].apply(fmt_pct)
-    formatted["CAGR（年化）"] = formatted["CAGR（年化）"].apply(fmt_pct)
-    formatted["Calmar Ratio"] = formatted["Calmar Ratio"].apply(fmt_num)
-    formatted["最大回撤（MDD）"] = formatted["最大回撤（MDD）"].apply(fmt_pct)
-    formatted["年化波動"] = formatted["年化波動"].apply(fmt_pct)
-    formatted["Sharpe"] = formatted["Sharpe"].apply(fmt_num)
-    formatted["Sortino"] = formatted["Sortino"].apply(fmt_num)
-    formatted["交易次數"] = formatted["交易次數"].apply(fmt_int)
-
-    # --- Styler（套用在 formatted） ---
-    styled = formatted.style
-
-    # 置中樣式
-    styled = styled.set_properties(**{"text-align": "center"})
-    styled = styled.set_properties(
-        subset=["策略"],
-        **{"font-weight": "bold", "color": "#2c7be5"}
-    )
-
-    # --- Heatmap 欄位 ---
-    heat_cols = [
-        "期末資產", "總報酬率", "CAGR（年化）", "Calmar Ratio",
-        "最大回撤（MDD）", "年化波動", "Sharpe", "Sortino"
-    ]
-
-    # --- 逐欄 Heatmap（最穩定版本）---
-    from matplotlib import cm
-
-    def colormap(series, cmap_name="RdYlGn"):
-        """把數字欄轉成 0~1，再映射到顏色"""
-        s = series.astype(float).fillna(0.0)
-        if s.max() - s.min() < 1e-9:
-            norm = (s - s.min())
-        else:
-            norm = (s - s.min()) / (s.max() - s.min())
-        cmap = cm.get_cmap(cmap_name)
-        return norm.map(
-            lambda x: f"background-color: rgba{cmap(x)}"
-        )
-
-    # 套用在 styled（這裡 styled 來自 formatted.style）
-    for col in heat_cols:
-        styled = styled.apply(lambda s: colormap(raw_table[col]), subset=[col])
-
-    # --- Hover、對齊、隱藏 index ---
-    styled = styled.set_table_styles([
-        {"selector": "tbody tr:hover", "props": [("background-color", "#f0f8ff")]},
-        {"selector": "th", "props": [("text-align", "center")]},
     ])
 
-    styled = styled.hide(axis="index")
+    # 2. 轉置表格 (Transpose)
+    # 將「策略」設為索引，然後轉置，這樣「策略」就會變成欄位名稱
+    df_vertical = raw_table.set_index("策略").T
 
+    # 3. 準備顯示用的表格 (Formatted String)
+    # 我們複製一份來做格式化，保留 df_vertical 做數值計算
+    df_display = df_vertical.copy()
+
+    # 定義每個指標的格式化函數
+    format_map = {
+        "期末資產": fmt_money,
+        "總報酬率": fmt_pct,
+        "CAGR (年化)": fmt_pct,
+        "夏普值 (Sharpe)": fmt_num,
+        "索提諾 (Sortino)": fmt_num,
+        "風報比 (Calmar)": fmt_num,
+        "最大回撤 (MDD)": fmt_pct,
+        "年化波動率": fmt_pct,
+        "交易次數": fmt_int,
+    }
+
+    for idx_name, func in format_map.items():
+        if idx_name in df_display.index:
+            df_display.loc[idx_name] = df_display.loc[idx_name].apply(func)
+
+    # 4. 定義樣式與熱力圖邏輯
+    from matplotlib import cm
+
+    def get_color(val, vmin, vmax, invert=False):
+        """計算單一數值的顏色"""
+        if pd.isna(val):
+            return ""
+        
+        # 避免除以零
+        if vmax - vmin < 1e-9:
+            norm = 0.5
+        else:
+            norm = (val - vmin) / (vmax - vmin)
+        
+        # 如果是「越低越好」的指標 (如 MDD)，反轉顏色邏輯
+        if invert:
+            norm = 1 - norm
+            
+        cmap = cm.get_cmap("RdYlGn") # 紅-黃-綠
+        rgba = cmap(norm)
+        return f"background-color: rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, 0.5)" # 0.5 透明度讓文字更清楚
+
+    # 建立 Styler
+    styled = df_display.style
+
+    # 設定基本樣式
+    styled = styled.set_properties(**{
+        "text-align": "center", 
+        "padding": "8px", 
+        "border": "1px solid #eee"
+    })
+    
+    # 針對 Table Header (策略名稱) 加強樣式
+    styled = styled.set_table_styles([
+        {"selector": "th", "props": [("text-align", "center"), ("background-color", "#f8f9fa"), ("color", "#333"), ("font-size", "1.1em")]},
+        {"selector": "td", "props": [("font-size", "1em")]},
+    ])
+
+    # 5. 逐列 (Row-wise) 應用熱力圖
+    # 我們需要遍歷 df_vertical 的每一列（每個指標），算出該列的最大最小值，然後上色
+    
+    # 定義哪些指標是「越低越好」（需要反轉顏色）
+    invert_metrics = ["最大回撤 (MDD)", "年化波動率"]
+
+    for idx, row in df_vertical.iterrows():
+        # 取得該列的數值陣列
+        vals = row.astype(float).values
+        vmin, vmax = np.nanmin(vals), np.nanmax(vals)
+        
+        # 判斷是否需要反轉顏色
+        invert = idx in invert_metrics
+        
+        # 生成該列的樣式列表
+        styles = [get_color(v, vmin, vmax, invert) for v in vals]
+        
+        # 將樣式應用到 df_display 對應的列
+        styled = styled.apply(lambda x, s=styles: s, axis=1, subset=pd.IndexSlice[idx, :])
+
+    # 6. 輸出 HTML
     st.write(styled.to_html(), unsafe_allow_html=True)
