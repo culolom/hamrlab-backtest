@@ -7,7 +7,7 @@ import streamlit as st
 import os
 import datetime
 import pandas as pd
-import auth  # <---【修改點 1】引入剛剛建立的 auth.py
+import auth  # 引入驗證模組
 
 # 1. 頁面設定 (必須放在第一行)
 st.set_page_config(
@@ -20,12 +20,8 @@ st.set_page_config(
 # ------------------------------------------------------
 # 🔒 會員驗證守門員 (Password Protection)
 # ------------------------------------------------------
-# 【修改點 2】原本這裡長長的 check_password 函式全部刪除
-# 改成直接呼叫 auth 模組裡的函式：
-
 if not auth.check_password():
     st.stop()  # 驗證沒過就停在這裡
-
 
 
 # ------------------------------------------------------
@@ -36,9 +32,9 @@ if not auth.check_password():
 DATA_DIR = "data"
 # ======================================
 # 🔧 指定本月動能排行榜要跑哪些標的
-#     你想改誰，就改這行
+#    你想改誰，就改這行
 # ======================================
-TARGET_SYMBOLS = ["0050.TW", "GLD", "QQQ", "SPY", "VT", "ACWI", "VOO","SPY", "VXUS", "VEA", "VWO", "BOXX", "VTI", "BIL", "IEF", "IEI"]
+TARGET_SYMBOLS = ["0050.TW", "GLD", "QQQ", "SPY", "VT", "ACWI", "VOO", "VXUS", "VEA", "VWO", "BOXX", "VTI", "BIL", "IEF", "IEI"]
 
 def find_csv_for_symbol(symbol: str, files: list):
     """在 data/*.csv 中找符合 symbol 的檔名（模糊搜尋）"""
@@ -195,8 +191,6 @@ with st.sidebar:
     st.title("倉鼠量化戰情室")
     st.caption("v1.1.1 Beta | 白銀小倉鼠限定")
     
-
-
     st.divider()
     
     st.markdown("### 🔗 快速連結")
@@ -275,7 +269,9 @@ strategies = [
         "btn_label": "進入 0050 回測",
     },
 ]
-    st.markdown("""
+
+# 【修正】這裡的 st.markdown 之前被錯誤縮排了，現在移回最左邊
+st.markdown("""
     <style>
     /* ====== 卡片外框容器 ====== */
     .strategy-container {
@@ -343,8 +339,7 @@ strategies = [
     
     <div class="strategy-container">
     
-        <!-- QQQ 卡片 -->
-        <div class="strategy-card" onclick="window.location.href='QQQ_LRS.py'">
+        <div class="strategy-card">
             <div class="strategy-title">🦅 QQQ LRS 動態槓桿（美股）🏆</div>
     
             <div>
@@ -358,11 +353,10 @@ strategies = [
                 槓桿 ETF，捕捉 Nasdaq 長期成長趨勢。
             </p>
     
-            <div class="strategy-btn">👉 進入 QQQ 回測</div>
+            <div class="strategy-btn">👉 進入 QQQ 回測 (請點擊下方按鈕)</div>
         </div>
     
-        <!-- 0050 卡片 -->
-        <div class="strategy-card" onclick="window.location.href='0050_LRS.py'">
+        <div class="strategy-card">
             <div class="strategy-title">🇹🇼 TW 0050 LRS 動態槓桿（台股）</div>
     
             <div>
@@ -376,7 +370,7 @@ strategies = [
                 追求比大盤更高的報酬風險比。
             </p>
     
-            <div class="strategy-btn">👉 進入 0050 回測</div>
+            <div class="strategy-btn">👉 進入 0050 回測 (請點擊下方按鈕)</div>
         </div>
     
     </div>
