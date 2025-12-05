@@ -486,12 +486,12 @@ if st.button("開始回測 🚀"):
     vol_gap_lrs_vs_lev = (vol_lrs - vol_lev) * 100
     mdd_gap_lrs_vs_lev = (mdd_lrs - mdd_lev) * 100
 
-    # 定義 CSS 樣式 (莫蘭迪/輕量化風格)
+    # 定義 CSS 樣式 (使用 CSS Variables 適應深淺色)
     st.markdown("""
     <style>
         .kpi-card {
             background-color: var(--secondary-background-color);
-            border: 1px solid rgba(128, 128, 128, 0.1);
+            border: 1px solid rgba(128, 128, 128, 0.15);
             border-radius: 12px;
             padding: 20px 16px;
             display: flex;
@@ -499,81 +499,85 @@ if st.button("開始回測 🚀"):
             align-items: flex-start;
             justify-content: space-between;
             height: 100%;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .kpi-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
         .kpi-label {
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             color: var(--text-color);
-            opacity: 0.6;
-            margin-bottom: 6px;
+            opacity: 0.7;
+            font-weight: 500;
+            margin-bottom: 4px;
         }
         .kpi-value {
-            font-size: 1.7rem;
+            font-size: 1.8rem;
             font-weight: 700;
             color: var(--text-color);
-            margin-bottom: 10px;
+            margin-bottom: 12px;
             font-family: 'Noto Sans TC', sans-serif;
-            letter-spacing: 0.5px;
         }
-        /* 輕量化 Chip */
+        /* 漲跌幅標籤 (Chip 樣式) */
         .delta-chip {
             display: inline-flex;
             align-items: center;
-            padding: 3px 8px;
-            border-radius: 6px; /* 改為小圓角，比較像標籤而非按鈕 */
-            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
             font-weight: 600;
             white-space: nowrap;
         }
-        /* 正面 (綠色) - 改用柔和綠 */
+        /* 正面狀態 (綠色) */
         .delta-positive {
-            background-color: transparent; /* 背景透明 */
-            color: #2e7d32; /* 深綠文字 */
-            border: 1px solid rgba(46, 125, 50, 0.2); /* 淡淡的綠框 */
+            background-color: rgba(33, 195, 84, 0.15);
+            color: #21c354;
         }
-        /* 負面 (紅色) - 改用柔和紅 */
+        /* 負面狀態 (紅色) */
         .delta-negative {
-            background-color: transparent;
-            color: #c62828; /* 深紅文字 */
-            border: 1px solid rgba(198, 40, 40, 0.2);
+            background-color: rgba(255, 43, 43, 0.15);
+            color: #ff2b2b;
         }
-        /* 中性 - 灰色 */
+        /* 中性狀態 */
         .delta-neutral {
-            background-color: transparent;
+            background-color: rgba(128, 128, 128, 0.15);
             color: var(--text-color);
-            opacity: 0.5;
-            border: 1px solid rgba(128, 128, 128, 0.2);
-        }
-        
-        /* 深色模式適配：文字稍微調亮一點 */
-        @media (prefers-color-scheme: dark) {
-            .delta-positive { color: #66bb6a; border-color: rgba(102, 187, 106, 0.3); }
-            .delta-negative { color: #ef5350; border-color: rgba(239, 83, 80, 0.3); }
+            opacity: 0.7;
         }
     </style>
     """, unsafe_allow_html=True)
 
-    # 輔助函式 (邏輯不變，CSS Class 已更新)
+    # 輔助函式：產生單張卡片的 HTML
     def kpi_card_html(label, value, gap_val, invert_logic=False):
+        """
+        invert_logic=True 代表「數值越低越好」(如 MDD, 波動率)
+        Gap < 0 時顯示為綠色 (好)
+        """
+        # 判斷好壞顏色
         is_good = False
         if invert_logic:
+            # 波動/MDD：Gap 為負 (下降) 是好事
             if gap_val < 0: is_good = True
         else:
+            # 資產/CAGR：Gap 為正 (上升) 是好事
             if gap_val > 0: is_good = True
 
+        # 決定顏色 class
         if abs(gap_val) < 0.01:
             delta_class = "delta-neutral"
             sign_str = ""
             icon = "➖"
         elif is_good:
             delta_class = "delta-positive"
-            sign_str = "+" if gap_val > 0 else ""
-            icon = "▲" # 改用實心小箭頭
+            sign_str = "+" if gap_val > 0 else "" # 顯示 + 號，若原本就是負號則不用
+            icon = "🔼" if not invert_logic else "🔽" # 變多用上箭頭，變少(好)用下箭頭
         else:
             delta_class = "delta-negative"
             sign_str = "+" if gap_val > 0 else ""
-            icon = "▼"
+            icon = "🔽" if not invert_logic else "🔼" # 變少用下箭頭，變多(壞)用上箭頭
         
-        delta_text = f"{icon} {sign_str}{gap_val:.2f}% vs 槓桿" # 文字稍微縮短一點
+        # 格式化 Gap 文字
+        delta_text = f"{icon} 較槓桿 {sign_str}{gap_val:.2f}%"
 
         return f"""
         <div class="kpi-card">
@@ -684,7 +688,6 @@ if st.button("開始回測 🚀"):
 
     # 3. 建立 HTML 表格字串
     # 使用 CSS Variables (var(--...)) 確保深色/淺色模式都能正確顯示文字顏色
-# 定義更清爽的 CSS
     html_code = """
     <style>
         .comparison-table {
@@ -693,112 +696,120 @@ if st.button("開始回測 🚀"):
             border-spacing: 0;
             border-radius: 8px;
             overflow: hidden;
-            /* 移除明顯的外框，改用極淡的線條 */
-            border: 1px solid rgba(128,128,128, 0.1);
+            border: 1px solid var(--secondary-background-color);
             font-family: 'Noto Sans TC', sans-serif;
             margin-bottom: 1rem;
-            font-size: 0.95rem;
         }
         .comparison-table th {
-            background-color: var(--background-color); /* 表頭背景改為與頁面同色 */
+            background-color: var(--secondary-background-color);
             color: var(--text-color);
             padding: 12px;
             text-align: center;
-            font-weight: 600;
-            border-bottom: 2px solid rgba(128,128,128, 0.1);
-            opacity: 0.9;
+            font-weight: bold;
+            border-bottom: 2px solid var(--background-color);
         }
+        /* 第一欄 (指標名稱) 靠左並加強顯示 */
         .comparison-table td.metric-name {
-            background-color: var(--secondary-background-color); /* 第一欄維持微深色 */
+            background-color: var(--secondary-background-color);
             color: var(--text-color);
-            font-weight: 500;
+            font-weight: 600;
             text-align: left;
             padding: 10px 15px;
-            width: 25%;
-            font-size: 0.9rem;
-            border-bottom: 1px solid rgba(128,128,128, 0.05);
-            opacity: 0.8;
+            width: 20%;
+            border-bottom: 1px solid var(--background-color);
         }
         .comparison-table td.data-cell {
             text-align: center;
             padding: 10px;
             color: var(--text-color);
-            border-bottom: 1px solid rgba(128,128,128, 0.05);
-            transition: background-color 0.2s;
+            border-bottom: 1px solid var(--secondary-background-color);
+            transition: background-color 0.3s;
         }
-        /* LRS 欄位：加一點點極淡的藍色背景作為區隔，不用邊框了，太硬 */
-        .comparison-table td.lrs-col {
-            background-color: rgba(66, 133, 244, 0.03); 
+        .comparison-table tr:last-child td {
+            border-bottom: none;
         }
+        /* Hover 效果 */
         .comparison-table tr:hover td.data-cell {
-            filter: brightness(0.98); /* Hover 時稍微變暗一點點即可 */
+            filter: brightness(0.95);
         }
     </style>
     <table class="comparison-table">
         <thead>
             <tr>
-                <th style="text-align:left; padding-left:15px; width:25%;">指標</th>
+                <th style="text-align:left; padding-left:15px;">📊 策略指標</th>
     """
     
+    # 寫入表頭 (策略名稱)
+    for col_name in df_vertical.columns:
+        html_code += f"<th>{col_name}</th>"
+    html_code += "</tr></thead><tbody>"
 
-    # 🎨 重點修改：顏色邏輯 (Pastel 柔和版)
+    # 寫入內容 (逐列處理)
+    import matplotlib.colors as mcolors
+
+    # 定義顏色映射函數 (數值, 該列最小值, 該列最大值, 是否反轉)
     def get_color(val, vmin, vmax, invert=False):
         if np.isnan(val) or val == -1: return "transparent"
+        
+        # 防止除以零
         if vmax == vmin: return "transparent"
         
+        # 歸一化 0~1
         norm = (val - vmin) / (vmax - vmin)
         if invert:
-            norm = 1 - norm 
+            norm = 1 - norm # 反轉：數值越小(MDD)，norm 越接近 1 (越綠)
             
-        # 邏輯：
-        # 我們大幅降低 alpha 值，讓它變成「空氣感」背景
-        # 最好 (Green): alpha 0.12 (淡淡的綠)
-        # 最差 (Red): alpha 0.12 (淡淡的紅)
-        # 中間值: alpha 趨近 0 (透明)
+        # 為了美觀且適應深淺色，我們使用帶透明度的顏色 (RGBA)
+        # 紅(壞) -> 黃 -> 綠(好)
+        # 0.0(Red) -> 0.5(Yellow) -> 1.0(Green)
+        # 我們只取 "背景色"，文字顏色保持 var(--text-color)
         
-        # 將 norm (0~1) 轉換為 -1 ~ 1 的區間來計算強度
-        # 0(最差) -> -1, 0.5(中間) -> 0, 1(最好) -> 1
-        strength = (norm - 0.5) * 2 
+        # 使用自定義的柔和色調
+        # 壞 (Red): rgba(255, 80, 80, alpha)
+        # 好 (Green): rgba(33, 195, 84, alpha)
         
-        if strength > 0:
-             # 偏好 (Green): 使用稍微帶藍的綠 (Teal/Mint)，比較高級
-             # 數值越高，透明度越高，最高 0.15
-             alpha = strength * 0.15 
-             return f"rgba(0, 150, 136, {alpha:.3f})" # Teal Green
+        alpha = 0.15 + (norm * 0.25) # 透明度範圍 0.15 ~ 0.4 (不要太深，確保文字可讀)
+        
+        if norm > 0.5:
+             # 偏綠 (好)
+             return f"rgba(33, 195, 84, {alpha:.2f})"
         else:
-             # 偏壞 (Red): 使用帶橘的紅，不那麼刺眼
-             alpha = abs(strength) * 0.15
-             return f"rgba(239, 83, 80, {alpha:.3f})" # Muted Red
+             # 偏紅 (壞) - norm 越小越紅
+             # 調整 alpha 讓紅色的強度隨差勁程度增加
+             red_alpha = 0.15 + ((1-norm) * 0.25)
+             return f"rgba(255, 80, 80, {red_alpha:.2f})"
 
     for metric in df_vertical.index:
-        # ... (中間邏輯不變) ...
+        row_data = df_vertical.loc[metric]
+        config = metrics_config.get(metric, {"fmt": fmt_num, "invert": False})
+        
+        # 計算該列的 min/max 用於 heatmap (排除無效值)
+        valid_values = [x for x in row_data if isinstance(x, (int, float)) and x != -1]
+        vmin = min(valid_values) if valid_values else 0
+        vmax = max(valid_values) if valid_values else 0
+        
+        html_code += f"<tr><td class='metric-name'>{metric}</td>"
         
         for strategy in df_vertical.columns:
             val = row_data[strategy]
+            
+            # 取得顯示文字
             display_text = config["fmt"](val)
             
-            # 計算背景色
-            bg_style = ""
+            # 取得背景顏色
+            bg_color = "transparent"
             if isinstance(val, (int, float)) and metric != "交易次數":
-                color_rgba = get_color(val, vmin, vmax, config["invert"])
-                bg_style = f"background-color: {color_rgba};"
+                bg_color = get_color(val, vmin, vmax, config["invert"])
             
-            # LRS 欄位特殊處理
-            is_lrs = (strategy == df_vertical.columns[0])
-            lrs_class = "lrs-col" if is_lrs else ""
-            
-            # 如果是 LRS 且有 heatmap 顏色，我們混合一下 (CSS 會疊加，這裡簡單處理，若有 heatmap 色則覆蓋 LRS 底色)
-            # 但為了乾淨，我們讓 heatmap 顏色優先
-            
-            font_weight = "bold" if is_lrs else "normal"
-            
-            # 組合 style
-            # 如果 bg_style 是 transparent，且是 lrs_col，CSS class 會給它淡藍色
-            # 如果 bg_style 有顏色，inline style 會覆蓋 class 的淡藍色 -> 符合需求
-            
-            html_code += f"<td class='data-cell {lrs_class}' style='{bg_style} font-weight:{font_weight};'>{display_text}</td>"
+            # 特別處理：如果是第一欄(LRS)，加粗顯示
+            font_weight = "bold" if strategy == df_vertical.columns[0] else "normal"
+            # LRS 欄位加個微邊框強調
+            border_style = "border-left: 2px solid var(--primary-color);" if strategy == df_vertical.columns[0] else ""
+
+            html_code += f"<td class='data-cell' style='background-color: {bg_color}; font-weight:{font_weight}; {border_style}'>{display_text}</td>"
         
         html_code += "</tr>"
 
     html_code += "</tbody></table>"
+    
     st.write(html_code, unsafe_allow_html=True)
