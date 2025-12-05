@@ -430,101 +430,188 @@ if st.button("開始回測 🚀"):
                   f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
 
     ###############################################################
-    # 完整比較表格（Heatmap 正確版）
+    # 完整比較表格（直式美化版 + 自動適應深淺色模式）
     ###############################################################
-    
-    raw_table = pd.DataFrame([
-        {
-            "策略": f"{lev_label} LRS 槓桿策略",
+
+    # 1. 準備原始數據 (以策略名稱為 Index，方便轉置)
+    # 這裡將 MDD 和 波動率 轉為負值存入 raw_data 僅是為了 heatmap 計算邏輯一致(越大越綠)，顯示時會轉回正值
+    data_dict = {
+        f"<b>{lev_label}</b><br><span style='font-size:0.85em; opacity:0.7'>LRS 策略</span>": {
             "期末資產": capital_lrs_final,
             "總報酬率": final_ret_lrs,
-            "CAGR（年化）": cagr_lrs,
+            "CAGR (年化)": cagr_lrs,
             "Calmar Ratio": calmar_lrs,
-            "最大回撤（MDD）": mdd_lrs,
-            "年化波動": vol_lrs,
-            "Sharpe": sharpe_lrs,
-            "Sortino": sortino_lrs,
+            "最大回撤 (MDD)": mdd_lrs, # 稍後處理顏色邏輯
+            "年化波動": vol_lrs,       # 稍後處理顏色邏輯
+            "Sharpe Ratio": sharpe_lrs,
+            "Sortino Ratio": sortino_lrs,
             "交易次數": trade_count_lrs,
         },
-        {
-            "策略": f"{lev_label} BH（槓桿）",
+        f"<b>{lev_label}</b><br><span style='font-size:0.85em; opacity:0.7'>Buy & Hold</span>": {
             "期末資產": capital_lev_final,
             "總報酬率": final_ret_lev,
-            "CAGR（年化）": cagr_lev,
+            "CAGR (年化)": cagr_lev,
             "Calmar Ratio": calmar_lev,
-            "最大回撤（MDD）": mdd_lev,
+            "最大回撤 (MDD)": mdd_lev,
             "年化波動": vol_lev,
-            "Sharpe": sharpe_lev,
-            "Sortino": sortino_lev,
-            "交易次數": np.nan,
+            "Sharpe Ratio": sharpe_lev,
+            "Sortino Ratio": sortino_lev,
+            "交易次數": -1, # 無意義
         },
-        {
-            "策略": f"{base_label} BH（原型）",
+        f"<b>{base_label}</b><br><span style='font-size:0.85em; opacity:0.7'>Buy & Hold</span>": {
             "期末資產": capital_base_final,
             "總報酬率": final_ret_base,
-            "CAGR（年化）": cagr_base,
+            "CAGR (年化)": cagr_base,
             "Calmar Ratio": calmar_base,
-            "最大回撤（MDD）": mdd_base,
+            "最大回撤 (MDD)": mdd_base,
             "年化波動": vol_base,
-            "Sharpe": sharpe_base,
-            "Sortino": sortino_base,
-            "交易次數": np.nan,
-        },
-    ]).reset_index(drop=True)
+            "Sharpe Ratio": sharpe_base,
+            "Sortino Ratio": sortino_base,
+            "交易次數": -1, # 無意義
+        }
+    }
 
-    # --- 格式化表格（顯示用） ---
-    formatted = raw_table.copy()
-    formatted["期末資產"] = formatted["期末資產"].apply(fmt_money)
-    formatted["總報酬率"] = formatted["總報酬率"].apply(fmt_pct)
-    formatted["CAGR（年化）"] = formatted["CAGR（年化）"].apply(fmt_pct)
-    formatted["Calmar Ratio"] = formatted["Calmar Ratio"].apply(fmt_num)
-    formatted["最大回撤（MDD）"] = formatted["最大回撤（MDD）"].apply(fmt_pct)
-    formatted["年化波動"] = formatted["年化波動"].apply(fmt_pct)
-    formatted["Sharpe"] = formatted["Sharpe"].apply(fmt_num)
-    formatted["Sortino"] = formatted["Sortino"].apply(fmt_num)
-    formatted["交易次數"] = formatted["交易次數"].apply(fmt_int)
+    # 轉置：Index 變成指標，Columns 變成策略
+    df_vertical = pd.DataFrame(data_dict)
 
-    # --- Styler（套用在 formatted） ---
-    styled = formatted.style
+    # 2. 定義格式化與顏色邏輯
+    # invert_color: True 代表數值越小越好 (MDD, 波動)
+    metrics_config = {
+        "期末資產":       {"fmt": fmt_money, "invert": False},
+        "總報酬率":       {"fmt": fmt_pct,   "invert": False},
+        "CAGR (年化)":    {"fmt": fmt_pct,   "invert": False},
+        "Calmar Ratio":   {"fmt": fmt_num,   "invert": False},
+        "最大回撤 (MDD)": {"fmt": fmt_pct,   "invert": True},  # 越小越好
+        "年化波動":       {"fmt": fmt_pct,   "invert": True},  # 越小越好
+        "Sharpe Ratio":   {"fmt": fmt_num,   "invert": False},
+        "Sortino Ratio":  {"fmt": fmt_num,   "invert": False},
+        "交易次數":       {"fmt": lambda x: fmt_int(x) if x >=0 else "—", "invert": True} # 次數少比較省手續費? 或不套色
+    }
 
-    # 置中樣式
-    styled = styled.set_properties(**{"text-align": "center"})
-    styled = styled.set_properties(
-        subset=["策略"],
-        **{"font-weight": "bold", "color": "#2c7be5"}
-    )
+    # 3. 建立 HTML 表格字串
+    # 使用 CSS Variables (var(--...)) 確保深色/淺色模式都能正確顯示文字顏色
+    html_code = """
+    <style>
+        .comparison-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--secondary-background-color);
+            font-family: 'Noto Sans TC', sans-serif;
+            margin-bottom: 1rem;
+        }
+        .comparison-table th {
+            background-color: var(--secondary-background-color);
+            color: var(--text-color);
+            padding: 12px;
+            text-align: center;
+            font-weight: bold;
+            border-bottom: 2px solid var(--background-color);
+        }
+        /* 第一欄 (指標名稱) 靠左並加強顯示 */
+        .comparison-table td.metric-name {
+            background-color: var(--secondary-background-color);
+            color: var(--text-color);
+            font-weight: 600;
+            text-align: left;
+            padding: 10px 15px;
+            width: 20%;
+            border-bottom: 1px solid var(--background-color);
+        }
+        .comparison-table td.data-cell {
+            text-align: center;
+            padding: 10px;
+            color: var(--text-color);
+            border-bottom: 1px solid var(--secondary-background-color);
+            transition: background-color 0.3s;
+        }
+        .comparison-table tr:last-child td {
+            border-bottom: none;
+        }
+        /* Hover 效果 */
+        .comparison-table tr:hover td.data-cell {
+            filter: brightness(0.95);
+        }
+    </style>
+    <table class="comparison-table">
+        <thead>
+            <tr>
+                <th style="text-align:left; padding-left:15px;">📊 策略指標</th>
+    """
+    
+    # 寫入表頭 (策略名稱)
+    for col_name in df_vertical.columns:
+        html_code += f"<th>{col_name}</th>"
+    html_code += "</tr></thead><tbody>"
 
-    # --- Heatmap 欄位 ---
-    heat_cols = [
-        "期末資產", "總報酬率", "CAGR（年化）", "Calmar Ratio",
-        "最大回撤（MDD）", "年化波動", "Sharpe", "Sortino"
-    ]
+    # 寫入內容 (逐列處理)
+    import matplotlib.colors as mcolors
 
-    # --- 逐欄 Heatmap（最穩定版本）---
-    from matplotlib import cm
-
-    def colormap(series, cmap_name="RdYlGn"):
-        """把數字欄轉成 0~1，再映射到顏色"""
-        s = series.astype(float).fillna(0.0)
-        if s.max() - s.min() < 1e-9:
-            norm = (s - s.min())
+    # 定義顏色映射函數 (數值, 該列最小值, 該列最大值, 是否反轉)
+    def get_color(val, vmin, vmax, invert=False):
+        if np.isnan(val) or val == -1: return "transparent"
+        
+        # 防止除以零
+        if vmax == vmin: return "transparent"
+        
+        # 歸一化 0~1
+        norm = (val - vmin) / (vmax - vmin)
+        if invert:
+            norm = 1 - norm # 反轉：數值越小(MDD)，norm 越接近 1 (越綠)
+            
+        # 為了美觀且適應深淺色，我們使用帶透明度的顏色 (RGBA)
+        # 紅(壞) -> 黃 -> 綠(好)
+        # 0.0(Red) -> 0.5(Yellow) -> 1.0(Green)
+        # 我們只取 "背景色"，文字顏色保持 var(--text-color)
+        
+        # 使用自定義的柔和色調
+        # 壞 (Red): rgba(255, 80, 80, alpha)
+        # 好 (Green): rgba(33, 195, 84, alpha)
+        
+        alpha = 0.15 + (norm * 0.25) # 透明度範圍 0.15 ~ 0.4 (不要太深，確保文字可讀)
+        
+        if norm > 0.5:
+             # 偏綠 (好)
+             return f"rgba(33, 195, 84, {alpha:.2f})"
         else:
-            norm = (s - s.min()) / (s.max() - s.min())
-        cmap = cm.get_cmap(cmap_name)
-        return norm.map(
-            lambda x: f"background-color: rgba{cmap(x)}"
-        )
+             # 偏紅 (壞) - norm 越小越紅
+             # 調整 alpha 讓紅色的強度隨差勁程度增加
+             red_alpha = 0.15 + ((1-norm) * 0.25)
+             return f"rgba(255, 80, 80, {red_alpha:.2f})"
 
-    # 套用在 styled（這裡 styled 來自 formatted.style）
-    for col in heat_cols:
-        styled = styled.apply(lambda s: colormap(raw_table[col]), subset=[col])
+    for metric in df_vertical.index:
+        row_data = df_vertical.loc[metric]
+        config = metrics_config.get(metric, {"fmt": fmt_num, "invert": False})
+        
+        # 計算該列的 min/max 用於 heatmap (排除無效值)
+        valid_values = [x for x in row_data if isinstance(x, (int, float)) and x != -1]
+        vmin = min(valid_values) if valid_values else 0
+        vmax = max(valid_values) if valid_values else 0
+        
+        html_code += f"<tr><td class='metric-name'>{metric}</td>"
+        
+        for strategy in df_vertical.columns:
+            val = row_data[strategy]
+            
+            # 取得顯示文字
+            display_text = config["fmt"](val)
+            
+            # 取得背景顏色
+            bg_color = "transparent"
+            if isinstance(val, (int, float)) and metric != "交易次數":
+                bg_color = get_color(val, vmin, vmax, config["invert"])
+            
+            # 特別處理：如果是第一欄(LRS)，加粗顯示
+            font_weight = "bold" if strategy == df_vertical.columns[0] else "normal"
+            # LRS 欄位加個微邊框強調
+            border_style = "border-left: 2px solid var(--primary-color);" if strategy == df_vertical.columns[0] else ""
 
-    # --- Hover、對齊、隱藏 index ---
-    styled = styled.set_table_styles([
-        {"selector": "tbody tr:hover", "props": [("background-color", "#f0f8ff")]},
-        {"selector": "th", "props": [("text-align", "center")]},
-    ])
+            html_code += f"<td class='data-cell' style='background-color: {bg_color}; font-weight:{font_weight}; {border_style}'>{display_text}</td>"
+        
+        html_code += "</tr>"
 
-    styled = styled.hide(axis="index")
-
-    st.write(styled.to_html(), unsafe_allow_html=True)
+    html_code += "</tbody></table>"
+    
+    st.write(html_code, unsafe_allow_html=True)
