@@ -477,85 +477,96 @@ if st.button("開始回測 🚀"):
         st.plotly_chart(fig_hist, use_container_width=True)
 
     ###############################################################
-    # KPI Summary (美化卡片版 + 嚴格正綠負紅)
+    # KPI Summary (高級儀表板風格 + 正綠負紅邏輯)
     ###############################################################
 
-    # 計算 Gap (與槓桿BH相比)
+    # 1. 計算 Gap (與槓桿BH相比)
     asset_gap_lrs_vs_lev = ((capital_lrs_final / capital_lev_final) - 1) * 100
     cagr_gap_lrs_vs_lev = (cagr_lrs - cagr_lev) * 100
     vol_gap_lrs_vs_lev = (vol_lrs - vol_lev) * 100
     mdd_gap_lrs_vs_lev = (mdd_lrs - mdd_lev) * 100
 
-    # 定義 CSS 樣式 (維持輕量化風格)
+    # 2. 定義高級 CSS 樣式 (卡片、陰影、圓角)
     st.markdown("""
     <style>
+        /* 卡片容器：背景色、圓角、陰影 */
         .kpi-card {
             background-color: var(--secondary-background-color);
+            border-radius: 16px; /* 更圓潤的角 */
+            padding: 24px 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04); /* 靜態微陰影 */
             border: 1px solid rgba(128, 128, 128, 0.1);
-            border-radius: 12px;
-            padding: 20px 16px;
             display: flex;
             flex-direction: column;
-            align-items: flex-start;
             justify-content: space-between;
             height: 100%;
+            transition: all 0.3s ease; /* 動畫過渡 */
         }
+        
+        /* 滑鼠懸停效果：浮起 + 加深陰影 */
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+            border-color: rgba(128, 128, 128, 0.2);
+        }
+
         .kpi-label {
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             color: var(--text-color);
-            opacity: 0.6;
-            margin-bottom: 6px;
-        }
-        .kpi-value {
-            font-size: 1.7rem;
-            font-weight: 700;
-            color: var(--text-color);
-            margin-bottom: 10px;
-            font-family: 'Noto Sans TC', sans-serif;
+            opacity: 0.7;
+            font-weight: 500;
+            margin-bottom: 8px;
+            text-transform: uppercase; /* 標籤全大寫看起來比較高級 */
             letter-spacing: 0.5px;
         }
-        /* 輕量化 Chip */
+
+        .kpi-value {
+            font-size: 2rem; /* 數字加大 */
+            font-weight: 800;
+            color: var(--text-color);
+            margin-bottom: 16px;
+            font-family: 'Noto Sans TC', sans-serif;
+            line-height: 1.2;
+        }
+
+        /* 漲跌幅標籤 (Chip) */
         .delta-chip {
             display: inline-flex;
             align-items: center;
-            padding: 3px 8px;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            white-space: nowrap;
+            justify-content: center;
+            padding: 6px 12px;
+            border-radius: 20px; /* 膠囊形狀 */
+            font-size: 0.85rem;
+            font-weight: 700;
+            width: fit-content;
         }
-        /* 正數樣式 (>0) : 綠色 */
+
+        /* 正值 (>0) 樣式：綠色背景 + 深綠字 */
         .delta-positive {
-            background-color: transparent;
-            color: #2e7d32; /* 深綠文字 */
-            border: 1px solid rgba(46, 125, 50, 0.2);
+            background-color: rgba(33, 195, 84, 0.12);
+            color: #21c354;
         }
-        /* 負數樣式 (<0) : 紅色 */
+
+        /* 負值 (<0) 樣式：紅色背景 + 深紅字 */
         .delta-negative {
-            background-color: transparent;
-            color: #c62828; /* 深紅文字 */
-            border: 1px solid rgba(198, 40, 40, 0.2);
+            background-color: rgba(255, 60, 60, 0.12);
+            color: #ff3c3c;
         }
-        /* 中性樣式 (=0) : 灰色 */
+
+        /* 中性值 (=0) 樣式：灰色 */
         .delta-neutral {
-            background-color: transparent;
+            background-color: rgba(128, 128, 128, 0.1);
             color: var(--text-color);
-            opacity: 0.5;
-            border: 1px solid rgba(128, 128, 128, 0.2);
+            opacity: 0.6;
         }
-        
-        /* 深色模式適配 */
-        @media (prefers-color-scheme: dark) {
-            .delta-positive { color: #66bb6a; border-color: rgba(102, 187, 106, 0.3); }
-            .delta-negative { color: #ef5350; border-color: rgba(239, 83, 80, 0.3); }
-        }
+
     </style>
     """, unsafe_allow_html=True)
 
-    # 輔助函式 (修改：純粹依據 gap_val 正負變色)
-    def kpi_card_html(label, value, gap_val, invert_logic=False):
-        # 註：invert_logic 參數保留是為了相容呼叫，但在顏色判斷中不再使用
+    # 3. 輔助函式 (邏輯：正數綠色，負數紅色)
+    def kpi_card_html(label, value, gap_val):
         
+        # 判定顏色與箭頭
         if gap_val > 0.001:
             delta_class = "delta-positive"
             icon = "▲"
@@ -563,13 +574,14 @@ if st.button("開始回測 🚀"):
         elif gap_val < -0.001:
             delta_class = "delta-negative"
             icon = "▼"
-            sign_str = "" # 負數本身帶有負號，不需額外加
+            sign_str = "" # 負數自帶負號
         else:
             delta_class = "delta-neutral"
             icon = "➖"
             sign_str = ""
 
-        delta_text = f"{icon} 較槓桿 {sign_str}{gap_val:.2f}%"
+        # 組合顯示文字
+        delta_text = f"{icon} {sign_str}{gap_val:.2f}% (vs 槓桿)"
 
         return f"""
         <div class="kpi-card">
@@ -581,78 +593,39 @@ if st.button("開始回測 🚀"):
         </div>
         """
 
-    # 建立 4 欄佈局
-    row1 = st.columns(4)
+    # 4. 建立佈局並渲染 (請確認這邊只有一次 st.columns)
+    row_kpi = st.columns(4)
 
-    with row1[0]:
+    with row_kpi[0]:
         st.markdown(kpi_card_html(
             "期末資產 (LRS)", 
             format_currency(capital_lrs_final), 
             asset_gap_lrs_vs_lev
         ), unsafe_allow_html=True)
 
-    with row1[1]:
+    with row_kpi[1]:
         st.markdown(kpi_card_html(
             "CAGR (年化)", 
             format_percent(cagr_lrs), 
             cagr_gap_lrs_vs_lev
         ), unsafe_allow_html=True)
 
-    with row1[2]:
+    with row_kpi[2]:
         st.markdown(kpi_card_html(
             "年化波動 (LRS)", 
             format_percent(vol_lrs), 
-            vol_gap_lrs_vs_lev, 
-            invert_logic=True 
+            vol_gap_lrs_vs_lev
         ), unsafe_allow_html=True)
 
-    with row1[3]:
+    with row_kpi[3]:
         st.markdown(kpi_card_html(
             "最大回撤 (MDD)", 
             format_percent(mdd_lrs), 
-            mdd_gap_lrs_vs_lev, 
-            invert_logic=True
+            mdd_gap_lrs_vs_lev
         ), unsafe_allow_html=True)
     
-    st.markdown("<div style='margin-bottom: 20px'></div>", unsafe_allow_html=True)
-
-    # 建立 4 欄佈局
-    row1 = st.columns(4)
-
-    with row1[0]:
-        st.markdown(kpi_card_html(
-            "期末資產 (LRS)", 
-            format_currency(capital_lrs_final), 
-            asset_gap_lrs_vs_lev, 
-            invert_logic=False
-        ), unsafe_allow_html=True)
-
-    with row1[1]:
-        st.markdown(kpi_card_html(
-            "CAGR (年化)", 
-            format_percent(cagr_lrs), 
-            cagr_gap_lrs_vs_lev, 
-            invert_logic=False
-        ), unsafe_allow_html=True)
-
-    with row1[2]:
-        st.markdown(kpi_card_html(
-            "年化波動 (LRS)", 
-            format_percent(vol_lrs), 
-            vol_gap_lrs_vs_lev, 
-            invert_logic=True  # 波動率越低越好 -> invert=True
-        ), unsafe_allow_html=True)
-
-    with row1[3]:
-        st.markdown(kpi_card_html(
-            "最大回撤 (MDD)", 
-            format_percent(mdd_lrs), 
-            mdd_gap_lrs_vs_lev, 
-            invert_logic=True  # MDD 越低越好 -> invert=True
-        ), unsafe_allow_html=True)
-    
-    # 增加一點間距
-    st.markdown("<div style='margin-bottom: 20px'></div>", unsafe_allow_html=True)
+    # 增加底部間距，避免與下方圖表太近
+    st.markdown("<div style='margin-bottom: 30px'></div>", unsafe_allow_html=True)
 
     ###############################################################
     # 完整比較表格 (極簡版：移除顏色，僅顯示冠軍 🏆)
