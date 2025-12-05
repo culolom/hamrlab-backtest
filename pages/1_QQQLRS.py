@@ -97,16 +97,13 @@ DATA_DIR = Path("data")
 ###############################################################
 
 def load_csv(symbol: str) -> pd.DataFrame:
-    # 這裡會讀取 data/QQQ.csv 或 data/TQQQ.csv
     path = DATA_DIR / f"{symbol}.csv"
     if not path.exists():
         return pd.DataFrame()
 
     df = pd.read_csv(path, parse_dates=["Date"], index_col="Date")
     df = df.sort_index()
-    # 兼容性處理：美股 CSV 通常是 Close 或 Adj Close
-    col_name = "Adj Close" if "Adj Close" in df.columns else "Close"
-    df["Price"] = df[col_name]
+    df["Price"] = df["Close"]
     return df[["Price"]]
 
 
@@ -115,15 +112,14 @@ def get_full_range_from_csv(base_symbol: str, lev_symbol: str):
     df2 = load_csv(lev_symbol)
 
     if df1.empty or df2.empty:
-        # 預設時間若讀不到檔案
-        return dt.date(2010, 1, 1), dt.date.today()
+        return dt.date(2012, 1, 1), dt.date.today()
 
     start = max(df1.index.min().date(), df2.index.min().date())
     end = min(df1.index.max().date(), df2.index.max().date())
     return start, end
 
 ###############################################################
-# 工具函式 (修改幣別顯示)
+# 工具函式
 ###############################################################
 
 def calc_metrics(series: pd.Series):
@@ -138,33 +134,40 @@ def calc_metrics(series: pd.Series):
     sortino = (avg / downside) * np.sqrt(252) if downside > 0 else np.nan
     return vol, sharpe, sortino
 
-# 修改為美金格式
+
 def fmt_money(v):
-    try: return f"${v:,.2f}"
+    try: return f"{v:,.0f} 元"
     except: return "—"
 
-def format_currency(v):
-    try: return f"${v:,.2f}"
-    except: return "—"
 
 def fmt_pct(v, d=2):
     try: return f"{v:.{d}%}"
     except: return "—"
 
+
 def fmt_num(v, d=2):
     try: return f"{v:.{d}f}"
     except: return "—"
+
 
 def fmt_int(v):
     try: return f"{int(v):,}"
     except: return "—"
 
+
 def nz(x, default=0.0):
     return float(np.nan_to_num(x, nan=default))
+
+
+def format_currency(v):
+    try: return f"{v:,.0f} 元"
+    except: return "—"
+
 
 def format_percent(v, d=2):
     try: return f"{v*100:.{d}f}%"
     except: return "—"
+
 
 def format_number(v, d=2):
     try: return f"{v:.{d}f}"
@@ -183,15 +186,13 @@ with col2:
     lev_symbol = LEV_ETFS[lev_label]
 
 s_min, s_max = get_full_range_from_csv(base_symbol, lev_symbol)
-st.info(f"📌 資料庫可回測區間：{s_min} ~ {s_max}")
+st.info(f"📌 可回測區間：{s_min} ~ {s_max}")
 
 col3, col4, col5 = st.columns(3)
 with col3:
-    # 預設回測 5 年，或資料的最早開始時間
-    default_start = max(s_min, s_max - dt.timedelta(days=10 * 365))
     start = st.date_input(
         "開始日期",
-        value=default_start,
+        value=max(s_min, s_max - dt.timedelta(days=5 * 365)),
         min_value=s_min, max_value=s_max,
     )
 
@@ -200,12 +201,12 @@ with col4:
 
 with col5:
     capital = st.number_input(
-        "投入本金 (USD)", 1_000, 10_000_000, 10_000, step=1_000,
+        "投入本金（元）", 1000, 5_000_000, 100_000, step=10_000,
     )
 
 position_mode = st.radio(
     "策略初始狀態",
-    ["空手起跑 (標準 LRS)", "一開始就全倉槓桿 ETF"],
+    ["空手起跑（標準 LRS）", "一開始就全倉槓桿 ETF"],
     index=0,
 )
 
@@ -215,14 +216,14 @@ position_mode = st.radio(
 
 if st.button("開始回測 🚀"):
 
-    start_early = start - dt.timedelta(days=365) # 預讀一年算 MA
+    start_early = start - dt.timedelta(days=365)
 
-    with st.spinner(f"讀取 {base_symbol} 與 {lev_symbol} 資料中…"):
+    with st.spinner("讀取 CSV 中…"):
         df_base_raw = load_csv(base_symbol)
         df_lev_raw = load_csv(lev_symbol)
 
     if df_base_raw.empty or df_lev_raw.empty:
-        st.error(f"⚠️ 資料讀取失敗！請確認 data 資料夾內是否有 {base_symbol}.csv 與 {lev_symbol}.csv")
+        st.error("⚠️ CSV 資料讀取失敗，請確認 data/*.csv 是否存在")
         st.stop()
 
     df_base_raw = df_base_raw.loc[start_early:end]
@@ -238,7 +239,7 @@ if st.button("開始回測 🚀"):
 
     df = df.loc[start:end]
     if df.empty:
-        st.error("⚠️ 有效回測區間不足 (可能是 MA 計算導致前段資料被截除)")
+        st.error("⚠️ 有效回測區間不足")
         st.stop()
 
     df["Return_base"] = df["Price_base"].pct_change().fillna(0)
@@ -253,10 +254,8 @@ if st.button("開始回測 🚀"):
         p, m = df["Price_base"].iloc[i], df["MA_200"].iloc[i]
         p0, m0 = df["Price_base"].iloc[i-1], df["MA_200"].iloc[i-1]
 
-        # 黃金交叉 (站上 MA)
         if p > m and p0 <= m0:
             df.iloc[i, df.columns.get_loc("Signal")] = 1
-        # 死亡交叉 (跌破 MA)
         elif p < m and p0 >= m0:
             df.iloc[i, df.columns.get_loc("Signal")] = -1
 
@@ -276,12 +275,10 @@ if st.button("開始回測 🚀"):
 
     equity_lrs = [1.0]
     for i in range(1, len(df)):
-        # 若持有部位
         if df["Position"].iloc[i] == 1 and df["Position"].iloc[i-1] == 1:
             r = df["Price_lev"].iloc[i] / df["Price_lev"].iloc[i-1]
             equity_lrs.append(equity_lrs[-1] * r)
         else:
-            # 空手 (持有現金，假設報酬為 0)
             equity_lrs.append(equity_lrs[-1])
 
     df["Equity_LRS"] = equity_lrs
@@ -328,44 +325,131 @@ if st.button("開始回測 🚀"):
     trade_count_lrs = int((df["Signal"] != 0).sum())
 
     ###############################################################
-    # 視覺化區塊
+    # ⬇⬇⬇ 以下內容完全保留（圖表 + KPI + 表格）
     ###############################################################
 
-    # --- 原型 & MA ---
-    st.markdown(f"<h3>📌 {base_label.split(' ')[0]} 價格 & 200SMA (訊號來源)</h3>", unsafe_allow_html=True)
+    # --- 原型 & MA & 槓桿價格 (雙軸圖表) ---
+    st.markdown("<h3>📌 策略訊號與執行價格 (雙軸對照)</h3>", unsafe_allow_html=True)
 
     fig_price = go.Figure()
-    fig_price.add_trace(go.Scatter(x=df.index, y=df["Price_base"], name=f"{base_symbol}", mode="lines"))
-    fig_price.add_trace(go.Scatter(x=df.index, y=df["MA_200"], name="200 日 SMA", mode="lines"))
 
+    # 1. [左軸] 原型 ETF (訊號來源)
+    fig_price.add_trace(go.Scatter(
+        x=df.index, 
+        y=df["Price_base"], 
+        name=f"{base_label} (左軸)", 
+        mode="lines",
+        line=dict(width=2, color="#636EFA"),
+        hovertemplate=f"<b>{base_label}</b><br>日期: %{{x|%Y-%m-%d}}<br>價格: %{{y:,.2f}} 元<extra></extra>"
+    ))
+
+    # 2. [左軸] 200MA
+    fig_price.add_trace(go.Scatter(
+        x=df.index, 
+        y=df["MA_200"], 
+        name="200 日 SMA", 
+        mode="lines",
+        line=dict(width=1.5, color="#FFA15A"),
+        hovertemplate="<b>200SMA</b><br>價格: %{y:,.2f} 元<extra></extra>"
+    ))
+
+    # 3. [右軸] 槓桿 ETF (實際標的) - 使用虛線區隔
+    fig_price.add_trace(go.Scatter(
+        x=df.index, 
+        y=df["Price_lev"], 
+        name=f"{lev_label} (右軸)", 
+        mode="lines",
+        line=dict(width=1, color="#00CC96", dash='dot'), # 虛線
+        opacity=0.6, # 半透明，避免搶戲
+        yaxis="y2",  # 指定到右邊的 Y 軸
+        hovertemplate=f"<b>{lev_label}</b><br>日期: %{{x|%Y-%m-%d}}<br>價格: %{{y:,.2f}} 元<extra></extra>"
+    ))
+
+    # 4. [標記] 買進點 (顯示雙價格)
     if not buys.empty:
+        # 準備 Tooltip 需要的數據：同時包含 Base 和 Lev 的價格
+        buy_hover_text = [
+            f"<b>▲ 買進訊號 (Buy)</b><br>"
+            f"日期: {d.strftime('%Y-%m-%d')}<br>"
+            f"------------------<br>"
+            f"訊號 ({base_label}): {p_base:,.2f} 元<br>"
+            f"成交 ({lev_label}): <b>{p_lev:,.2f} 元</b>"
+            for d, p_base, p_lev in zip(buys.index, buys["Price_base"], buys["Price_lev"])
+        ]
+
         fig_price.add_trace(go.Scatter(
-            x=buys.index, y=buys["Price_base"], mode="markers",
-            name="買進訊號 (Buy)", marker=dict(color="green", size=10, symbol="triangle-up")
+            x=buys.index, 
+            y=buys["Price_base"], # 標記還是畫在左軸(訊號線)上，視覺上才準
+            mode="markers",
+            name="買進訊號", 
+            marker=dict(color="#00C853", size=12, symbol="triangle-up", line=dict(width=1, color="white")),
+            hoverinfo="text", # 使用自定義 text
+            hovertext=buy_hover_text
         ))
 
+    # 5. [標記] 賣出點 (顯示雙價格)
     if not sells.empty:
+        sell_hover_text = [
+            f"<b>▼ 賣出訊號 (Sell)</b><br>"
+            f"日期: {d.strftime('%Y-%m-%d')}<br>"
+            f"------------------<br>"
+            f"訊號 ({base_label}): {p_base:,.2f} 元<br>"
+            f"成交 ({lev_label}): <b>{p_lev:,.2f} 元</b>"
+            for d, p_base, p_lev in zip(sells.index, sells["Price_base"], sells["Price_lev"])
+        ]
+
         fig_price.add_trace(go.Scatter(
-            x=sells.index, y=sells["Price_base"], mode="markers",
-            name="賣出訊號 (Sell)", marker=dict(color="red", size=10, symbol="triangle-down")
+            x=sells.index, 
+            y=sells["Price_base"], 
+            mode="markers",
+            name="賣出訊號", 
+            marker=dict(color="#D50000", size=12, symbol="triangle-down", line=dict(width=1, color="white")),
+            hoverinfo="text",
+            hovertext=sell_hover_text
         ))
 
-    fig_price.update_layout(template="plotly_white", height=420)
+    # 6. Layout 設定 (雙軸)
+    fig_price.update_layout(
+        template="plotly_white", 
+        height=450,
+        hovermode="x unified", # 統一顯示 x 軸資訊
+        yaxis=dict(
+            title=f"{base_label} 價格",
+            showgrid=True,
+            zeroline=False
+        ),
+        yaxis2=dict(
+            title=f"{lev_label} 價格",
+            overlaying="y", # 疊加在第一個 y 軸上
+            side="right",   # 放在右邊
+            showgrid=False, # 右軸不顯示網格，避免線條太亂
+            zeroline=False
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        margin=dict(l=10, r=10, t=30, b=10)
+    )
+    
     st.plotly_chart(fig_price, use_container_width=True)
 
-    # ###############################################################
+    ###############################################################
     # Tabs
-    # ###############################################################
+    ###############################################################
 
-    st.markdown("<h3>📊 策略績效與風險分析</h3>", unsafe_allow_html=True)
-    tab_equity, tab_dd, tab_radar, tab_hist = st.tabs(["💰 資金曲線", "📉 回撤比較", "🕸️ 風險雷達", "📊 日報酬分佈"])
+    st.markdown("<h3>📊 三策略資金曲線與風險解析</h3>", unsafe_allow_html=True)
+    tab_equity, tab_dd, tab_radar, tab_hist = st.tabs(["資金曲線", "回撤比較", "風險雷達", "日報酬分佈"])
 
     # --- 資金曲線 ---
     with tab_equity:
         fig_equity = go.Figure()
-        fig_equity.add_trace(go.Scatter(x=df.index, y=df["Pct_Base"], mode="lines", name=f"{base_symbol} (原型)"))
-        fig_equity.add_trace(go.Scatter(x=df.index, y=df["Pct_Lev"], mode="lines", name=f"{lev_symbol} (槓桿BH)"))
-        fig_equity.add_trace(go.Scatter(x=df.index, y=df["Pct_LRS"], mode="lines", name="LRS 策略", line=dict(width=3)))
+        fig_equity.add_trace(go.Scatter(x=df.index, y=df["Pct_Base"], mode="lines", name="原型BH"))
+        fig_equity.add_trace(go.Scatter(x=df.index, y=df["Pct_Lev"], mode="lines", name="槓桿BH"))
+        fig_equity.add_trace(go.Scatter(x=df.index, y=df["Pct_LRS"], mode="lines", name="LRS"))
 
         fig_equity.update_layout(template="plotly_white", height=420, yaxis=dict(tickformat=".0%"))
         st.plotly_chart(fig_equity, use_container_width=True)
@@ -377,154 +461,432 @@ if st.button("開始回測 🚀"):
         dd_lrs = (df["Equity_LRS"] / df["Equity_LRS"].cummax() - 1) * 100
 
         fig_dd = go.Figure()
-        fig_dd.add_trace(go.Scatter(x=df.index, y=dd_base, name="原型 BH"))
-        fig_dd.add_trace(go.Scatter(x=df.index, y=dd_lev, name="槓桿 BH"))
-        fig_dd.add_trace(go.Scatter(x=df.index, y=dd_lrs, name="LRS 策略", fill="tozeroy"))
+        fig_dd.add_trace(go.Scatter(x=df.index, y=dd_base, name="原型BH"))
+        fig_dd.add_trace(go.Scatter(x=df.index, y=dd_lev, name="槓桿BH"))
+        fig_dd.add_trace(go.Scatter(x=df.index, y=dd_lrs, name="LRS", fill="tozeroy"))
 
         fig_dd.update_layout(template="plotly_white", height=420)
         st.plotly_chart(fig_dd, use_container_width=True)
 
     # --- 雷達 ---
     with tab_radar:
+        # 1. 準備數據
         radar_categories = ["CAGR", "Sharpe", "Sortino", "-MDD", "波動率(反轉)"]
 
+        # 這裡為了雷達圖好看，將數據標準化 (0~1) 或是直接繪製原始數值
+        # 為了避免不同量級(如 30% 和 1.1) 顯示問題，建議先做簡單的 Min-Max Scaling 顯示相對強弱
+        # 或者直接顯示數值，但要注意軸的刻度。這裡維持您的原始邏輯 (數值)，但優化視覺。
+        
+        # 建立數據 List
         radar_lrs  = [nz(cagr_lrs),  nz(sharpe_lrs),  nz(sortino_lrs),  nz(-mdd_lrs),  nz(-vol_lrs)]
         radar_lev  = [nz(cagr_lev),  nz(sharpe_lev),  nz(sortino_lev),  nz(-mdd_lev),  nz(-vol_lev)]
         radar_base = [nz(cagr_base), nz(sharpe_base), nz(sortino_base), nz(-mdd_base), nz(-vol_base)]
 
-        fig_radar = go.Figure()
-        fig_radar.add_trace(go.Scatterpolar(r=radar_lrs, theta=radar_categories, fill="toself", name="LRS 策略"))
-        fig_radar.add_trace(go.Scatterpolar(r=radar_lev, theta=radar_categories, fill="toself", name="槓桿 BH"))
-        fig_radar.add_trace(go.Scatterpolar(r=radar_base, theta=radar_categories, fill="toself", name="原型 BH"))
+        # 為了讓雷達圖閉合，通常 Plotly 需要把最後一點重複加回第一點 (但在 Scatterpolar 有 fill 屬性時通常會自動閉合，保險起見這裡不手動加，直接畫)
 
-        fig_radar.update_layout(template="plotly_white", height=480)
+        fig_radar = go.Figure()
+
+        # LRS (主角 - 紫色系)
+        fig_radar.add_trace(go.Scatterpolar(
+            r=radar_lrs, 
+            theta=radar_categories, 
+            fill='toself', 
+            name='LRS 策略',
+            line=dict(color='#636EFA', width=3),
+            fillcolor='rgba(99, 110, 250, 0.2)' # 半透明填充
+        ))
+
+        # 槓桿 BH (對照組1 - 紅色系)
+        fig_radar.add_trace(go.Scatterpolar(
+            r=radar_lev, 
+            theta=radar_categories, 
+            fill='toself', 
+            name=f'{lev_label} BH',
+            line=dict(color='#EF553B', width=2, dash='solid'),
+            fillcolor='rgba(239, 85, 59, 0.15)'
+        ))
+
+        # 原型 BH (對照組2 - 綠色系)
+        fig_radar.add_trace(go.Scatterpolar(
+            r=radar_base, 
+            theta=radar_categories, 
+            fill='toself', 
+            name=f'{base_label} BH',
+            line=dict(color='#00CC96', width=2, dash='dash'),
+            fillcolor='rgba(0, 204, 150, 0.1)'
+        ))
+
+        # 2. 視覺設定 (關鍵修復部分)
+        fig_radar.update_layout(
+            height=480,
+            # 移除 template="plotly_white"，改為全透明設定
+            paper_bgcolor='rgba(0,0,0,0)', # 外框透明
+            plot_bgcolor='rgba(0,0,0,0)',  # 繪圖區透明
+            polar=dict(
+                bgcolor='rgba(0,0,0,0)',   # 雷達圖圓盤背景透明 (關鍵!)
+                radialaxis=dict(
+                    visible=True,
+                    range=[None, None], # 自動抓範圍
+                    showticklabels=True,
+                    ticks='', # 不顯示刻度線
+                    gridcolor='rgba(128, 128, 128, 0.2)', # 網格線改為淡灰色 (深淺通用)
+                    linecolor='rgba(128, 128, 128, 0.3)'  # 軸線淡灰
+                ),
+                angularaxis=dict(
+                    gridcolor='rgba(128, 128, 128, 0.2)',
+                    linecolor='rgba(128, 128, 128, 0.3)'
+                )
+            ),
+            legend=dict(
+                orientation="h",  # 圖例水平排列
+                yanchor="bottom",
+                y=-0.15,          # 放在圖表下方
+                xanchor="center",
+                x=0.5
+            ),
+            font=dict(
+                family="Noto Sans TC",
+                size=12,
+                # 不指定 color，讓 Streamlit 自動根據 theme 決定文字顏色 (黑/白)
+            ),
+            margin=dict(l=40, r=40, t=40, b=40)
+        )
+
         st.plotly_chart(fig_radar, use_container_width=True)
 
     # --- 日報酬分佈 ---
     with tab_hist:
         fig_hist = go.Figure()
-        fig_hist.add_trace(go.Histogram(x=df["Return_base"] * 100, name="原型 BH", opacity=0.6))
-        fig_hist.add_trace(go.Histogram(x=df["Return_lev"] * 100, name="槓桿 BH", opacity=0.6))
-        fig_hist.add_trace(go.Histogram(x=df["Return_LRS"] * 100, name="LRS 策略", opacity=0.7))
-        fig_hist.update_layout(barmode="overlay", template="plotly_white", height=480, xaxis_title="日漲跌幅 (%)")
+        fig_hist.add_trace(go.Histogram(x=df["Return_base"] * 100, name="原型BH", opacity=0.6))
+        fig_hist.add_trace(go.Histogram(x=df["Return_lev"] * 100, name="槓桿BH", opacity=0.6))
+        fig_hist.add_trace(go.Histogram(x=df["Return_LRS"] * 100, name="LRS", opacity=0.7))
+        fig_hist.update_layout(barmode="overlay", template="plotly_white", height=480)
 
         st.plotly_chart(fig_hist, use_container_width=True)
 
     ###############################################################
-    # KPI Summary
+    # KPI Summary (高級儀表板風格 + 正綠負紅邏輯)
     ###############################################################
 
+    # 1. 計算 Gap (與槓桿BH相比)
     asset_gap_lrs_vs_lev = ((capital_lrs_final / capital_lev_final) - 1) * 100
     cagr_gap_lrs_vs_lev = (cagr_lrs - cagr_lev) * 100
     vol_gap_lrs_vs_lev = (vol_lrs - vol_lev) * 100
     mdd_gap_lrs_vs_lev = (mdd_lrs - mdd_lev) * 100
 
-    row1 = st.columns(4)
-    with row1[0]:
-        st.metric("期末資產 (LRS)", format_currency(capital_lrs_final),
-                  f"較槓桿BH {asset_gap_lrs_vs_lev:+.2f}%")
-    with row1[1]:
-        st.metric("CAGR (LRS)", format_percent(cagr_lrs),
-                  f"較槓桿BH {cagr_gap_lrs_vs_lev:+.2f}%")
-    with row1[2]:
-        st.metric("年化波動 (LRS)", format_percent(vol_lrs),
-                  f"較槓桿BH {vol_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
-    with row1[3]:
-        st.metric("最大回撤 (LRS)", format_percent(mdd_lrs),
-                  f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
+    # 2. 定義高級 CSS 樣式 (卡片、陰影、圓角)
+    st.markdown("""
+    <style>
+        /* 卡片容器：背景色、圓角、陰影 */
+        .kpi-card {
+            background-color: var(--secondary-background-color);
+            border-radius: 16px; /* 更圓潤的角 */
+            padding: 24px 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04); /* 靜態微陰影 */
+            border: 1px solid rgba(128, 128, 128, 0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100%;
+            transition: all 0.3s ease; /* 動畫過渡 */
+        }
+        
+        /* 滑鼠懸停效果：浮起 + 加深陰影 */
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+            border-color: rgba(128, 128, 128, 0.2);
+        }
+
+        .kpi-label {
+            font-size: 0.9rem;
+            color: var(--text-color);
+            opacity: 0.7;
+            font-weight: 500;
+            margin-bottom: 8px;
+            text-transform: uppercase; /* 標籤全大寫看起來比較高級 */
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-value {
+            font-size: 2rem; /* 數字加大 */
+            font-weight: 800;
+            color: var(--text-color);
+            margin-bottom: 16px;
+            font-family: 'Noto Sans TC', sans-serif;
+            line-height: 1.2;
+        }
+
+        /* 漲跌幅標籤 (Chip) */
+        .delta-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 12px;
+            border-radius: 20px; /* 膠囊形狀 */
+            font-size: 0.85rem;
+            font-weight: 700;
+            width: fit-content;
+        }
+
+        /* 正值 (>0) 樣式：綠色背景 + 深綠字 */
+        .delta-positive {
+            background-color: rgba(33, 195, 84, 0.12);
+            color: #21c354;
+        }
+
+        /* 負值 (<0) 樣式：紅色背景 + 深紅字 */
+        .delta-negative {
+            background-color: rgba(255, 60, 60, 0.12);
+            color: #ff3c3c;
+        }
+
+        /* 中性值 (=0) 樣式：灰色 */
+        .delta-neutral {
+            background-color: rgba(128, 128, 128, 0.1);
+            color: var(--text-color);
+            opacity: 0.6;
+        }
+
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 3. 輔助函式 (邏輯：正數綠色，負數紅色)
+    def kpi_card_html(label, value, gap_val):
+        
+        # 判定顏色與箭頭
+        if gap_val > 0.001:
+            delta_class = "delta-positive"
+            icon = "▲"
+            sign_str = "+"
+        elif gap_val < -0.001:
+            delta_class = "delta-negative"
+            icon = "▼"
+            sign_str = "" # 負數自帶負號
+        else:
+            delta_class = "delta-neutral"
+            icon = "➖"
+            sign_str = ""
+
+        # 組合顯示文字
+        delta_text = f"{icon} {sign_str}{gap_val:.2f}% (vs 槓桿)"
+
+        return f"""
+        <div class="kpi-card">
+            <div class="kpi-label">{label}</div>
+            <div class="kpi-value">{value}</div>
+            <div class="delta-chip {delta_class}">
+                {delta_text}
+            </div>
+        </div>
+        """
+
+    # 4. 建立佈局並渲染 (請確認這邊只有一次 st.columns)
+    row_kpi = st.columns(4)
+
+    with row_kpi[0]:
+        st.markdown(kpi_card_html(
+            "期末資產 (LRS)", 
+            format_currency(capital_lrs_final), 
+            asset_gap_lrs_vs_lev
+        ), unsafe_allow_html=True)
+
+    with row_kpi[1]:
+        st.markdown(kpi_card_html(
+            "CAGR (年化)", 
+            format_percent(cagr_lrs), 
+            cagr_gap_lrs_vs_lev
+        ), unsafe_allow_html=True)
+
+    with row_kpi[2]:
+        st.markdown(kpi_card_html(
+            "年化波動 (LRS)", 
+            format_percent(vol_lrs), 
+            vol_gap_lrs_vs_lev
+        ), unsafe_allow_html=True)
+
+    with row_kpi[3]:
+        st.markdown(kpi_card_html(
+            "最大回撤 (MDD)", 
+            format_percent(mdd_lrs), 
+            mdd_gap_lrs_vs_lev
+        ), unsafe_allow_html=True)
+    
+    # 增加底部間距，避免與下方圖表太近
+    st.markdown("<div style='margin-bottom: 30px'></div>", unsafe_allow_html=True)
 
     ###############################################################
-    # 完整比較表格
+    # 完整比較表格 (極簡版：移除顏色，僅顯示冠軍 🏆)
     ###############################################################
-    
-    raw_table = pd.DataFrame([
-        {
-            "策略": f"{lev_label.split(' ')[0]} LRS 策略",
+
+    # 1. 定義要顯示的指標順序
+    metrics_order = [
+        "期末資產", "總報酬率", "CAGR (年化)", "Calmar Ratio",
+        "最大回撤 (MDD)", "年化波動", "Sharpe Ratio", "Sortino Ratio", "交易次數"
+    ]
+
+    # 2. 準備原始數據
+    data_dict = {
+        f"<b>{lev_label}</b><br><span style='font-size:0.85em; opacity:0.7'>LRS 策略</span>": {
             "期末資產": capital_lrs_final,
             "總報酬率": final_ret_lrs,
             "CAGR (年化)": cagr_lrs,
             "Calmar Ratio": calmar_lrs,
             "最大回撤 (MDD)": mdd_lrs,
             "年化波動": vol_lrs,
-            "Sharpe": sharpe_lrs,
-            "Sortino": sortino_lrs,
+            "Sharpe Ratio": sharpe_lrs,
+            "Sortino Ratio": sortino_lrs,
             "交易次數": trade_count_lrs,
         },
-        {
-            "策略": f"{lev_label.split(' ')[0]} Buy&Hold",
+        f"<b>{lev_label}</b><br><span style='font-size:0.85em; opacity:0.7'>Buy & Hold</span>": {
             "期末資產": capital_lev_final,
             "總報酬率": final_ret_lev,
             "CAGR (年化)": cagr_lev,
             "Calmar Ratio": calmar_lev,
             "最大回撤 (MDD)": mdd_lev,
             "年化波動": vol_lev,
-            "Sharpe": sharpe_lev,
-            "Sortino": sortino_lev,
-            "交易次數": np.nan,
+            "Sharpe Ratio": sharpe_lev,
+            "Sortino Ratio": sortino_lev,
+            "交易次數": -1, 
         },
-        {
-            "策略": f"{base_label.split(' ')[0]} Buy&Hold",
+        f"<b>{base_label}</b><br><span style='font-size:0.85em; opacity:0.7'>Buy & Hold</span>": {
             "期末資產": capital_base_final,
             "總報酬率": final_ret_base,
             "CAGR (年化)": cagr_base,
             "Calmar Ratio": calmar_base,
             "最大回撤 (MDD)": mdd_base,
             "年化波動": vol_base,
-            "Sharpe": sharpe_base,
-            "Sortino": sortino_base,
-            "交易次數": np.nan,
-        },
-    ]).reset_index(drop=True)
+            "Sharpe Ratio": sharpe_base,
+            "Sortino Ratio": sortino_base,
+            "交易次數": -1,
+        }
+    }
 
-    # --- 格式化表格 (顯示用) ---
-    formatted = raw_table.copy()
-    formatted["期末資產"] = formatted["期末資產"].apply(fmt_money)
-    formatted["總報酬率"] = formatted["總報酬率"].apply(fmt_pct)
-    formatted["CAGR (年化)"] = formatted["CAGR (年化)"].apply(fmt_pct)
-    formatted["Calmar Ratio"] = formatted["Calmar Ratio"].apply(fmt_num)
-    formatted["最大回撤 (MDD)"] = formatted["最大回撤 (MDD)"].apply(fmt_pct)
-    formatted["年化波動"] = formatted["年化波動"].apply(fmt_pct)
-    formatted["Sharpe"] = formatted["Sharpe"].apply(fmt_num)
-    formatted["Sortino"] = formatted["Sortino"].apply(fmt_num)
-    formatted["交易次數"] = formatted["交易次數"].apply(fmt_int)
+    # 3. 建立 DataFrame 並排序
+    df_vertical = pd.DataFrame(data_dict).reindex(metrics_order)
 
-    # --- Styler ---
-    styled = formatted.style
+    # 4. 定義格式化與「好壞方向」
+    # invert=True 代表數值「越小越好」
+    metrics_config = {
+        "期末資產":       {"fmt": fmt_money, "invert": False},
+        "總報酬率":       {"fmt": fmt_pct,   "invert": False},
+        "CAGR (年化)":    {"fmt": fmt_pct,   "invert": False},
+        "Calmar Ratio":   {"fmt": fmt_num,   "invert": False},
+        "最大回撤 (MDD)": {"fmt": fmt_pct,   "invert": True},  # 越小越贏
+        "年化波動":       {"fmt": fmt_pct,   "invert": True},  # 越小越贏
+        "Sharpe Ratio":   {"fmt": fmt_num,   "invert": False},
+        "Sortino Ratio":  {"fmt": fmt_num,   "invert": False},
+        "交易次數":       {"fmt": lambda x: fmt_int(x) if x >= 0 else "—", "invert": True} # 假設次數少較好，或不比較
+    }
 
-    # 置中樣式
-    styled = styled.set_properties(**{"text-align": "center"})
-    styled = styled.set_properties(
-        subset=["策略"],
-        **{"font-weight": "bold", "color": "#2c7be5"}
-    )
+    # 5. 生成 HTML (樣式極簡化)
+    html_code = """
+    <style>
+        .comparison-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border-radius: 12px;
+            /* 極簡邊框 */
+            border: 1px solid var(--secondary-background-color);
+            font-family: 'Noto Sans TC', sans-serif;
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+        }
+        .comparison-table th {
+            /* 表頭使用次要背景色 */
+            background-color: var(--secondary-background-color);
+            color: var(--text-color);
+            padding: 14px;
+            text-align: center;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(128,128,128, 0.1);
+        }
+        .comparison-table td.metric-name {
+            background-color: transparent;
+            color: var(--text-color);
+            font-weight: 500;
+            text-align: left;
+            padding: 12px 16px;
+            width: 25%;
+            font-size: 0.9rem;
+            border-bottom: 1px solid rgba(128,128,128, 0.1);
+            opacity: 0.9;
+        }
+        .comparison-table td.data-cell {
+            text-align: center;
+            padding: 12px;
+            color: var(--text-color);
+            border-bottom: 1px solid rgba(128,128,128, 0.1);
+        }
+        /* 移除 LRS 的明顯底色，改為極淡的背景區分，或完全透明 */
+        .comparison-table td.lrs-col {
+            background-color: rgba(128, 128, 128, 0.03); 
+        }
+        /* 冠軍圖示樣式 */
+        .trophy-icon {
+            margin-left: 6px;
+            font-size: 1.1em;
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.4); /* 讓獎盃微微發光 */
+        }
+        .comparison-table tr:hover td {
+            background-color: rgba(128,128,128, 0.05); /* Hover 整行微亮 */
+        }
+    </style>
+    <table class="comparison-table">
+        <thead>
+            <tr>
+                <th style="text-align:left; padding-left:16px; width:25%;">指標</th>
+    """
+    
+    # 寫入表頭
+    for col_name in df_vertical.columns:
+        html_code += f"<th>{col_name}</th>"
+    html_code += "</tr></thead><tbody>"
 
-    # --- Heatmap 欄位 ---
-    heat_cols = [
-        "期末資產", "總報酬率", "CAGR (年化)", "Calmar Ratio",
-        "最大回撤 (MDD)", "年化波動", "Sharpe", "Sortino"
-    ]
+    # 寫入內容
+    for metric in df_vertical.index:
+        config = metrics_config.get(metric, {"fmt": fmt_num, "invert": False})
+        
+        # 1. 找出該列的「最佳值」(Winner Value)
+        # 先取出所有有效數值
+        raw_row_values = df_vertical.loc[metric].values
+        valid_values = [x for x in raw_row_values if isinstance(x, (int, float)) and x != -1 and not pd.isna(x)]
+        
+        target_val = None
+        if valid_values and metric != "交易次數": # 交易次數通常不比獎盃，看您需求
+            if config["invert"]:
+                target_val = min(valid_values) # 越小越好 (MDD, 波動)
+            else:
+                target_val = max(valid_values) # 越大越好 (報酬, Sharpe)
 
-    from matplotlib import cm
+        html_code += f"<tr><td class='metric-name'>{metric}</td>"
+        
+        # 2. 逐欄填入
+        for i, strategy in enumerate(df_vertical.columns):
+            val = df_vertical.at[metric, strategy]
+            
+            display_text = config["fmt"](val)
+            
+            # 判斷是否為冠軍
+            is_winner = False
+            if target_val is not None and isinstance(val, (int, float)) and val == target_val:
+                is_winner = True
+            
+            # 如果是冠軍，加上獎盃
+            if is_winner:
+                display_text = f"{display_text} <span class='trophy-icon'>🏆</span>"
+                # 也可以選擇讓冠軍文字變色，例如：
+                # display_text = f"<span style='color:#e6a23c; font-weight:bold'>{display_text}</span> 🏆"
+            
+            # LRS 欄位樣式
+            is_lrs = (i == 0)
+            lrs_class = "lrs-col" if is_lrs else ""
+            font_weight = "bold" if is_lrs else "normal"
+            
+            html_code += f"<td class='data-cell {lrs_class}' style='font-weight:{font_weight};'>{display_text}</td>"
+        
+        html_code += "</tr>"
 
-    def colormap(series, cmap_name="RdYlGn"):
-        s = series.astype(float).fillna(0.0)
-        if s.max() - s.min() < 1e-9:
-            norm = (s - s.min())
-        else:
-            norm = (s - s.min()) / (s.max() - s.min())
-        cmap = cm.get_cmap(cmap_name)
-        return norm.map(lambda x: f"background-color: rgba{cmap(x)}")
-
-    for col in heat_cols:
-        # MDD 和 波動率 越小越好 (反轉顏色: RdYlGn_r)
-        c_map = "RdYlGn_r" if col in ["最大回撤 (MDD)", "年化波動"] else "RdYlGn"
-        styled = styled.apply(lambda s: colormap(raw_table[col], c_map), subset=[col])
-
-    styled = styled.set_table_styles([
-        {"selector": "tbody tr:hover", "props": [("background-color", "#f0f8ff")]},
-        {"selector": "th", "props": [("text-align", "center")]},
-    ])
-
-    styled = styled.hide(axis="index")
-
-    st.write(styled.to_html(), unsafe_allow_html=True)
+    html_code += "</tbody></table>"
+    st.write(html_code, unsafe_allow_html=True)
