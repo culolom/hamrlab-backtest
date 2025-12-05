@@ -7,7 +7,7 @@ import streamlit as st
 import os
 import datetime
 import pandas as pd
-import auth  # <---【修改點 1】引入剛剛建立的 auth.py
+import auth  # <---【修改點 1】引入 auth.py
 
 # 1. 頁面設定 (必須放在第一行)
 st.set_page_config(
@@ -17,15 +17,48 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ==========================================
+# 🎨 CSS 樣式注入：卡片懸停浮起效果 (全域強制版)
+# ==========================================
+st.markdown("""
+<style>
+/* 針對 Streamlit 的 st.container(border=True) 產生的容器 
+   使用 !important 強制覆蓋原樣式
+*/
+[data-testid="stVerticalBlockBorderWrapper"] {
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    border: 1px solid #e0e0e0 !important;
+    background-color: transparent;
+}
+
+/* 滑鼠移上去 (Hover) 的狀態 */
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    transform: translateY(-8px) !important;              /* 向上浮起 8px */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15) !important; /* 增加立體陰影 */
+    border-color: #FFD700 !important;                    /* 邊框變金色 (配合獎盃) */
+    background-color: rgba(255, 255, 255, 0.05) !important; /* 微微打亮背景 */
+    cursor: pointer;
+}
+
+/* 深色模式適配 */
+@media (prefers-color-scheme: dark) {
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border: 1px solid #444 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border-color: #FFD700 !important;
+        box-shadow: 0 10px 30px rgba(255,255,255,0.1) !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # ------------------------------------------------------
 # 🔒 會員驗證守門員 (Password Protection)
 # ------------------------------------------------------
-# 【修改點 2】原本這裡長長的 check_password 函式全部刪除
-# 改成直接呼叫 auth 模組裡的函式：
-
 if not auth.check_password():
     st.stop()  # 驗證沒過就停在這裡
-
 
 
 # ------------------------------------------------------
@@ -34,11 +67,11 @@ if not auth.check_password():
 
 # 共有用：資料夾、工具函式
 DATA_DIR = "data"
+
 # ======================================
 # 🔧 指定本月動能排行榜要跑哪些標的
-#     你想改誰，就改這行
 # ======================================
-TARGET_SYMBOLS = ["0050.TW", "GLD", "QQQ", "SPY", "VT", "ACWI", "VOO","SPY", "VXUS", "VEA", "VWO", "BOXX", "VTI", "BIL", "IEF", "IEI"]
+TARGET_SYMBOLS = ["0050.TW", "GLD", "QQQ", "SPY", "VT", "ACWI", "VOO", "VXUS", "VEA", "VWO", "BOXX", "VTI", "BIL", "IEF", "IEI"]
 
 def find_csv_for_symbol(symbol: str, files: list):
     """在 data/*.csv 中找符合 symbol 的檔名（模糊搜尋）"""
@@ -49,17 +82,13 @@ def find_csv_for_symbol(symbol: str, files: list):
             return f
     return None
 
-
 def load_price_series(csv_path: str):
-    """從 CSV 讀出價格序列（支援 Date + Close / Adj Close）"""
+    """從 CSV 讀出價格序列"""
     try:
         df = pd.read_csv(csv_path)
-
-        # 第一欄視為日期欄
         df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors="coerce")
         df = df.set_index(df.columns[0]).sort_index()
 
-        # 優先 Close → Adj Close → 其他數值欄位
         candidates = ["Close", "Adj Close", "close", "adjclose"]
         for c in candidates:
             if c in df.columns:
@@ -68,15 +97,12 @@ def load_price_series(csv_path: str):
         num_cols = df.select_dtypes(include="number").columns
         if len(num_cols) == 0:
             return None
-
         return df[num_cols[-1]].astype(float).dropna()
-
     except Exception:
         return None
 
-
 def classify_trend(price: pd.Series):
-    """用 200 日 + 價格位置簡易判斷趨勢。"""
+    """用 200 日 + 價格位置簡易判斷趨勢"""
     if price is None or len(price) < 200:
         return "資料不足", "⬜"
     ma200 = price.rolling(200).mean().iloc[-1]
@@ -93,27 +119,19 @@ def classify_trend(price: pd.Series):
     else:
         return "空頭", "🔴"
 
-
 def get_momentum_ranking(data_dir="data", symbols=None):
-    """
-    symbols: list，例如 ["0050","00631L"]
-    若 symbols=None → 使用全部 CSV
-    """
+    """計算動能排行"""
     if not os.path.exists(data_dir):
         return None, "無資料夾"
 
-    # 計算日期區間（上個月月底）
     today = pd.Timestamp.today()
     this_month_start = today.replace(day=1)
     end_date = this_month_start - pd.Timedelta(days=1)
     start_date = end_date - pd.DateOffset(months=12)
 
     results = []
-
-    # 找全部 CSV
     all_files = [f for f in os.listdir(data_dir) if f.endswith(".csv")]
 
-    # 若 symbols 有指定 → 只跑這些 CSV
     if symbols:
         symbols_lower = [s.lower() for s in symbols]
         use_files = [f for f in all_files if f.replace(".csv", "").lower() in symbols_lower]
@@ -125,37 +143,29 @@ def get_momentum_ranking(data_dir="data", symbols=None):
 
     for f in use_files:
         symbol = f.replace(".csv", "")
-
         try:
             df = pd.read_csv(os.path.join(data_dir, f))
-            if "Date" not in df.columns:
-                continue
-
+            if "Date" not in df.columns: continue
+            
             col_price = "Adj Close" if "Adj Close" in df.columns else "Close"
-            if col_price not in df.columns:
-                continue
+            if col_price not in df.columns: continue
 
             df["Date"] = pd.to_datetime(df["Date"])
             df = df.set_index("Date").sort_index()
             df["MA_200"] = df[col_price].rolling(window=200).mean()
 
-            # 先抓到基準日前資料
             hist_window = df.loc[:end_date]
-            if hist_window.empty:
-                continue
-
+            if hist_window.empty: continue
+            
             last_valid = hist_window.index[-1]
-            if (end_date - last_valid).days > 15:
-                continue
+            if (end_date - last_valid).days > 15: continue
 
             p_end = hist_window[col_price].iloc[-1]
             ma_end = df.loc[last_valid, "MA_200"]
 
-            # 抓 12 個月前價格
             start_window = df.loc[:start_date]
-            if start_window.empty:
-                continue
-
+            if start_window.empty: continue
+            
             p_start = start_window[col_price].iloc[-1]
             ret = (p_end - p_start) / p_start
 
@@ -165,7 +175,6 @@ def get_momentum_ranking(data_dir="data", symbols=None):
                 "收盤價": p_end,
                 "200SMA": ma_end
             })
-
         except Exception:
             continue
 
@@ -180,23 +189,18 @@ def get_momentum_ranking(data_dir="data", symbols=None):
     return df, end_date
 
 
-
 # ------------------------------------------------------
 # 2. 側邊欄：品牌與外部連結
 # ------------------------------------------------------
-
 with st.sidebar:
-    # 檢查並顯示 Logo
     if os.path.exists("logo.png"):
         st.image("logo.png", width=120)
     else:
         st.title("🐹") 
         
     st.title("倉鼠量化戰情室")
-    st.caption("v1.1.1 Beta | 白銀小倉鼠限定")
+    st.caption("v1.1.2 Beta | 白銀小倉鼠限定")
     
-
-
     st.divider()
     
     st.markdown("### 🔗 快速連結")
@@ -209,7 +213,6 @@ with st.sidebar:
     st.info("💡 **提示**\n本平台僅供策略研究與回測驗證，不代表投資建議。")
     st.divider()
     
-    # 加入登出按鈕 (清除 Session)
     if st.button("🚪 登出系統"):
         st.session_state["password_correct"] = False
         st.rerun()
@@ -226,17 +229,11 @@ files = []
 try:
     data_dir = DATA_DIR
     if os.path.exists(data_dir):
-        files = [
-            os.path.join(data_dir, f)
-            for f in os.listdir(data_dir)
-            if f.endswith(".csv")
-        ]
+        files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith(".csv")]
         if files:
             latest_file = max(files, key=os.path.getmtime)
             timestamp = os.path.getmtime(latest_file)
-            last_update_str = datetime.datetime.fromtimestamp(
-                timestamp
-            ).strftime("%Y-%m-%d")
+            last_update_str = datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
             data_status = "✅ 系統數據正常"
         else:
             data_status = "⚠️ 無數據文件"
@@ -254,50 +251,8 @@ st.markdown("""
 
 st.divider()
 
-
-
-# ... (上面是 st.divider()) ...
-
-st.divider()
-
 # ==========================================
-# 🎨 CSS 樣式注入：卡片懸停浮起效果 (暴力版)
-# ==========================================
-st.markdown("""
-<style>
-/* 方法：直接針對 Streamlit 的邊框容器 ID 進行樣式覆蓋。
-   加上 !important 是為了覆蓋 Streamlit 原本的設定。
-*/
-[data-testid="stVerticalBlockBorderWrapper"] {
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important; /* 動畫效果 */
-    border: 1px solid #e0e0e0 !important;
-    background-color: transparent;
-}
-
-/* 滑鼠移上去 (Hover) 時的效果 */
-[data-testid="stVerticalBlockBorderWrapper"]:hover {
-    transform: translateY(-8px) !important;       /* 向上浮起 */
-    box-shadow: 0 10px 30px rgba(0,0,0,0.12) !important; /* 強烈的陰影 */
-    border-color: #FFD700 !important;             /* 邊框變金色 */
-    background-color: rgba(255, 255, 255, 0.02) !important; /* 微微發亮 */
-}
-
-/* 針對深色模式的修正 */
-@media (prefers-color-scheme: dark) {
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        border: 1px solid #444 !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        border-color: #FFD700 !important;
-        box-shadow: 0 10px 30px rgba(255,255,255,0.08) !important;
-    }
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# ==========================================
-# 🛠️ 策略定義區
+# 🛠️ 策略定義區 (含互動與獎盃邏輯)
 # ==========================================
 strategies = [
     {
@@ -307,7 +262,7 @@ strategies = [
         "tags": ["美股", "Nasdaq", "動態槓桿"],
         "page_path": "pages/1_QQQLRS.py",
         "btn_label": "進入 QQQ 回測",
-        "is_best": True,  # 🏆 設定為 True，標題就會出現獎盃
+        "is_best": True,  # <--- ✅ 設定 True，標題會顯示 🏆
     },
     {
         "name": "0050 LRS 動態槓桿 (台股)",
@@ -316,41 +271,34 @@ strategies = [
         "tags": ["台股", "0050", "波段操作"],
         "page_path": "pages/2_0050LRS.py",
         "btn_label": "進入 0050 回測",
-        "is_best": False, # 一般策略
+        "is_best": False, # <--- 設定 False，沒有獎盃
     },
 ]
 
 st.subheader("🛠️ 選擇你的實驗策略")
 
-# 使用 columns 排版
 cols = st.columns(2)
 
 for index, strategy in enumerate(strategies):
     col = cols[index % 2]
-    
+
     with col:
-        # border=True 這裡是 CSS 作用的關鍵
+        # 這裡的 border=True 會被上方的 CSS 樣式捕獲
         with st.container(border=True):
             
-            # --- 1. 處理標題與獎盃 ---
-            # 如果 is_best 為 True，標題後方加上 🏆
-            title_text = f"### {strategy['icon']} {strategy['name']}"
-            if strategy.get("is_best"):
-                title_text += " 🏆"
-            
-            st.markdown(title_text)
+            # --- 1. 標題與獎盃邏輯 ---
+            # 如果是較好的策略，加上獎盃符號
+            trophy = " 🏆" if strategy.get("is_best") else ""
+            st.markdown(f"### {strategy['icon']} {strategy['name']}{trophy}")
 
-            # --- 2. 處理標籤 (無顏色純文字版) ---
-            # 使用 " | " 分隔符號，把標籤串起來
+            # --- 2. 標籤處理 (拿掉顏色背景) ---
+            # 使用 " | " 分隔，並用 caption 顯示純文字
             tags_clean = " ｜ ".join(strategy["tags"])
-            # 使用 caption 呈現灰色小字，且不使用 ` ` 包覆，避免出現色塊
-            st.caption(f"🏷️ {tags_clean}")
+            st.caption(f"🏷️ {tags_clean}") 
 
             # --- 3. 描述與按鈕 ---
             st.write(strategy["description"])
-            
-            # 增加一點留白
-            st.markdown("######") 
+            st.write("") # 留白
             
             st.page_link(
                 strategy["page_path"],
@@ -359,7 +307,6 @@ for index, strategy in enumerate(strategies):
                 use_container_width=True,
             )
 
-# (接原本的 "功能 1：市場即時儀表板")
 # ==========================================
 # 📊 功能 1：市場即時儀表板 (戰情室核心)
 # ==========================================
@@ -367,20 +314,19 @@ st.subheader("📌 今日市場摘要")
 
 summary_cols = st.columns(4)
 
-# 定義常見指標／資產
 ASSET_CONFIG = [
     {"label": "美股科技", "symbol": "QQQ"},
     {"label": "美股大盤", "symbol": "SPY"},
     {"label": "台股大盤", "symbol": "0050"},
     {"label": "全球股市", "symbol": "VT"},
-    {"label": "長天期債券", "symbol": "TLT"},
+    {"label": "長天期債", "symbol": "TLT"},
     {"label": "比特幣", "symbol": "BTC"},
 ]
 
 if not files:
     st.info("目前找不到任何 CSV 數據檔案，市場摘要會先顯示為占位內容。請在 data 資料夾放入價格歷史 CSV。")
 else:
-    for i, asset in enumerate(ASSET_CONFIG[:4]):  # 先顯示 4 個重點
+    for i, asset in enumerate(ASSET_CONFIG[:4]):
         with summary_cols[i]:
             csv_path = find_csv_for_symbol(asset["symbol"], files)
             if csv_path is None:
@@ -391,15 +337,10 @@ else:
                 st.metric(asset["label"], trend_text, trend_icon)
 
 st.caption("註：以上為簡易 SMA200 趨勢判讀，只作為戰情室參考，不作為買賣訊號。")
-
 st.markdown("---")
 
-
 # ==========================================
-# 🏆 功能 2：本月動能排行榜 (過去 12 個月績效)
-# ==========================================
-# ==========================================
-# 🏆 本月動能排行榜（依照 TARGET_SYMBOLS 指定標的）
+# 🏆 功能 2：本月動能排行榜
 # ==========================================
 st.markdown("### 🏆 本月動能排行榜（過去 12 個月績效）")
 
@@ -407,7 +348,6 @@ rank_df, calc_date = get_momentum_ranking(DATA_DIR, symbols=TARGET_SYMBOLS)
 
 if rank_df is not None and not isinstance(calc_date, str):
     st.caption(f"📅 統計基準日：**{calc_date.strftime('%Y-%m-%d')}**（上個月底） | 過去 12 個月累積報酬")
-
     st.dataframe(
         rank_df,
         column_config={
@@ -418,22 +358,14 @@ if rank_df is not None and not isinstance(calc_date, str):
                 min_value=-50,
                 max_value=100,
             ),
-            "收盤價": st.column_config.NumberColumn(
-                "收盤價 (Price)",
-                format="$%.2f",
-            ),
-            "200SMA": st.column_config.NumberColumn(
-                "200 日均線",
-                format="$%.2f",
-            ),
+            "收盤價": st.column_config.NumberColumn("收盤價 (Price)", format="$%.2f"),
+            "200SMA": st.column_config.NumberColumn("200 日均線", format="$%.2f"),
         },
         use_container_width=True,
     )
 else:
     st.info("❗ 尚無足夠資料可計算動能排行，請確認 data/ 資料夾內容。")
 
-
-
-# 6. 頁尾
+# 頁尾
 st.markdown("---")
 st.caption("🚧 更多策略正在開發中 (MACD 動能、RSI 逆勢交易...)，敬請期待！")
