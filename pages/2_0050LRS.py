@@ -407,27 +407,155 @@ if st.button("開始回測 🚀"):
         st.plotly_chart(fig_hist, use_container_width=True)
 
     ###############################################################
-    # KPI Summary
+    # KPI Summary (美化卡片版 + 自動適應深淺色)
     ###############################################################
 
+    # 計算 Gap (與槓桿BH相比)
     asset_gap_lrs_vs_lev = ((capital_lrs_final / capital_lev_final) - 1) * 100
     cagr_gap_lrs_vs_lev = (cagr_lrs - cagr_lev) * 100
     vol_gap_lrs_vs_lev = (vol_lrs - vol_lev) * 100
     mdd_gap_lrs_vs_lev = (mdd_lrs - mdd_lev) * 100
 
+    # 定義 CSS 樣式 (使用 CSS Variables 適應深淺色)
+    st.markdown("""
+    <style>
+        .kpi-card {
+            background-color: var(--secondary-background-color);
+            border: 1px solid rgba(128, 128, 128, 0.15);
+            border-radius: 12px;
+            padding: 20px 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: space-between;
+            height: 100%;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .kpi-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .kpi-label {
+            font-size: 0.9rem;
+            color: var(--text-color);
+            opacity: 0.7;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .kpi-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text-color);
+            margin-bottom: 12px;
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+        /* 漲跌幅標籤 (Chip 樣式) */
+        .delta-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        /* 正面狀態 (綠色) */
+        .delta-positive {
+            background-color: rgba(33, 195, 84, 0.15);
+            color: #21c354;
+        }
+        /* 負面狀態 (紅色) */
+        .delta-negative {
+            background-color: rgba(255, 43, 43, 0.15);
+            color: #ff2b2b;
+        }
+        /* 中性狀態 */
+        .delta-neutral {
+            background-color: rgba(128, 128, 128, 0.15);
+            color: var(--text-color);
+            opacity: 0.7;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 輔助函式：產生單張卡片的 HTML
+    def kpi_card_html(label, value, gap_val, invert_logic=False):
+        """
+        invert_logic=True 代表「數值越低越好」(如 MDD, 波動率)
+        Gap < 0 時顯示為綠色 (好)
+        """
+        # 判斷好壞顏色
+        is_good = False
+        if invert_logic:
+            # 波動/MDD：Gap 為負 (下降) 是好事
+            if gap_val < 0: is_good = True
+        else:
+            # 資產/CAGR：Gap 為正 (上升) 是好事
+            if gap_val > 0: is_good = True
+
+        # 決定顏色 class
+        if abs(gap_val) < 0.01:
+            delta_class = "delta-neutral"
+            sign_str = ""
+            icon = "➖"
+        elif is_good:
+            delta_class = "delta-positive"
+            sign_str = "+" if gap_val > 0 else "" # 顯示 + 號，若原本就是負號則不用
+            icon = "🔼" if not invert_logic else "🔽" # 變多用上箭頭，變少(好)用下箭頭
+        else:
+            delta_class = "delta-negative"
+            sign_str = "+" if gap_val > 0 else ""
+            icon = "🔽" if not invert_logic else "🔼" # 變少用下箭頭，變多(壞)用上箭頭
+        
+        # 格式化 Gap 文字
+        delta_text = f"{icon} 較槓桿 {sign_str}{gap_val:.2f}%"
+
+        return f"""
+        <div class="kpi-card">
+            <div class="kpi-label">{label}</div>
+            <div class="kpi-value">{value}</div>
+            <div class="delta-chip {delta_class}">
+                {delta_text}
+            </div>
+        </div>
+        """
+
+    # 建立 4 欄佈局
     row1 = st.columns(4)
+
     with row1[0]:
-        st.metric("期末資產（LRS）", format_currency(capital_lrs_final),
-                  f"較槓桿BH {asset_gap_lrs_vs_lev:+.2f}%")
+        st.markdown(kpi_card_html(
+            "期末資產 (LRS)", 
+            format_currency(capital_lrs_final), 
+            asset_gap_lrs_vs_lev, 
+            invert_logic=False
+        ), unsafe_allow_html=True)
+
     with row1[1]:
-        st.metric("CAGR（LRS）", format_percent(cagr_lrs),
-                  f"較槓桿BH {cagr_gap_lrs_vs_lev:+.2f}%")
+        st.markdown(kpi_card_html(
+            "CAGR (年化)", 
+            format_percent(cagr_lrs), 
+            cagr_gap_lrs_vs_lev, 
+            invert_logic=False
+        ), unsafe_allow_html=True)
+
     with row1[2]:
-        st.metric("年化波動（LRS）", format_percent(vol_lrs),
-                  f"較槓桿BH {vol_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
+        st.markdown(kpi_card_html(
+            "年化波動 (LRS)", 
+            format_percent(vol_lrs), 
+            vol_gap_lrs_vs_lev, 
+            invert_logic=True  # 波動率越低越好 -> invert=True
+        ), unsafe_allow_html=True)
+
     with row1[3]:
-        st.metric("最大回撤（LRS）", format_percent(mdd_lrs),
-                  f"較槓桿BH {mdd_gap_lrs_vs_lev:+.2f}%", delta_color="inverse")
+        st.markdown(kpi_card_html(
+            "最大回撤 (MDD)", 
+            format_percent(mdd_lrs), 
+            mdd_gap_lrs_vs_lev, 
+            invert_logic=True  # MDD 越低越好 -> invert=True
+        ), unsafe_allow_html=True)
+    
+    # 增加一點間距
+    st.markdown("<div style='margin-bottom: 20px'></div>", unsafe_allow_html=True)
 
     ###############################################################
     # 完整比較表格（直式美化版 + 自動適應深淺色模式）
