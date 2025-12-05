@@ -258,27 +258,39 @@ st.divider()
 
 # ... (上面是 st.divider()) ...
 
+st.divider()
+
 # ==========================================
-# 🎨 CSS 樣式注入：卡片懸停浮起效果 (強力版)
+# 🎨 CSS 樣式注入：卡片懸停浮起效果 (暴力版)
 # ==========================================
-# 這裡使用更精確的 CSS 選擇器，並強制提升優先級
 st.markdown("""
 <style>
-/* 針對 st.container(border=True) 產生的外框 */
-div[data-testid="column"] > div > div > div > div[data-testid="stVerticalBlockBorderWrapper"] {
-    transition: all 0.3s ease-in-out !important;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px; /* 讓圓角更明顯 */
-    background-color: transparent; /* 預設透明 */
+/* 方法：直接針對 Streamlit 的邊框容器 ID 進行樣式覆蓋。
+   加上 !important 是為了覆蓋 Streamlit 原本的設定。
+*/
+[data-testid="stVerticalBlockBorderWrapper"] {
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important; /* 動畫效果 */
+    border: 1px solid #e0e0e0 !important;
+    background-color: transparent;
 }
 
-/* 滑鼠移上去 (Hover) 的效果 */
-div[data-testid="column"] > div > div > div > div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-    transform: translateY(-8px) !important;       /* 浮起效果 */
-    box-shadow: 0 12px 24px rgba(0,0,0,0.15) !important; /* 陰影效果 */
+/* 滑鼠移上去 (Hover) 時的效果 */
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    transform: translateY(-8px) !important;       /* 向上浮起 */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12) !important; /* 強烈的陰影 */
     border-color: #FFD700 !important;             /* 邊框變金色 */
-    background-color: rgba(255, 255, 255, 0.05);  /* 微微發亮 */
-    cursor: pointer; /* 讓滑鼠變成手指形狀，暗示可點擊 */
+    background-color: rgba(255, 255, 255, 0.02) !important; /* 微微發亮 */
+}
+
+/* 針對深色模式的修正 */
+@media (prefers-color-scheme: dark) {
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border: 1px solid #444 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border-color: #FFD700 !important;
+        box-shadow: 0 10px 30px rgba(255,255,255,0.08) !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -295,7 +307,7 @@ strategies = [
         "tags": ["美股", "Nasdaq", "動態槓桿"],
         "page_path": "pages/1_QQQLRS.py",
         "btn_label": "進入 QQQ 回測",
-        "is_best": True,  # <--- ✅ 設定為 True，標題就會出現 🏆
+        "is_best": True,  # 🏆 設定為 True，標題就會出現獎盃
     },
     {
         "name": "0050 LRS 動態槓桿 (台股)",
@@ -304,36 +316,41 @@ strategies = [
         "tags": ["台股", "0050", "波段操作"],
         "page_path": "pages/2_0050LRS.py",
         "btn_label": "進入 0050 回測",
-        "is_best": False, # <--- 一般策略，沒有獎盃
+        "is_best": False, # 一般策略
     },
 ]
 
 st.subheader("🛠️ 選擇你的實驗策略")
 
+# 使用 columns 排版
 cols = st.columns(2)
 
 for index, strategy in enumerate(strategies):
     col = cols[index % 2]
-
+    
     with col:
-        # 這裡的 border=True 會被上面的 CSS 抓到
+        # border=True 這裡是 CSS 作用的關鍵
         with st.container(border=True):
             
             # --- 1. 處理標題與獎盃 ---
-            # 判斷是否為最佳策略，如果是就加獎盃
-            title_suffix = " 🏆" if strategy.get("is_best") else ""
-            title_text = f"{strategy['icon']} {strategy['name']}{title_suffix}"
+            # 如果 is_best 為 True，標題後方加上 🏆
+            title_text = f"### {strategy['icon']} {strategy['name']}"
+            if strategy.get("is_best"):
+                title_text += " 🏆"
             
-            st.markdown(f"### {title_text}")
+            st.markdown(title_text)
 
             # --- 2. 處理標籤 (無顏色純文字版) ---
-            # 使用 " | " 符號將標籤串接起來，看起來像雜誌排版
-            tags_clean = " | ".join(strategy["tags"])
-            st.caption(f"🏷️ {tags_clean}") 
+            # 使用 " | " 分隔符號，把標籤串起來
+            tags_clean = " ｜ ".join(strategy["tags"])
+            # 使用 caption 呈現灰色小字，且不使用 ` ` 包覆，避免出現色塊
+            st.caption(f"🏷️ {tags_clean}")
 
             # --- 3. 描述與按鈕 ---
             st.write(strategy["description"])
-            st.write("") # 增加一點視覺留白，避免按鈕太貼文字
+            
+            # 增加一點留白
+            st.markdown("######") 
             
             st.page_link(
                 strategy["page_path"],
@@ -341,6 +358,8 @@ for index, strategy in enumerate(strategies):
                 icon="👉",
                 use_container_width=True,
             )
+
+# (接原本的 "功能 1：市場即時儀表板")
 # ==========================================
 # 📊 功能 1：市場即時儀表板 (戰情室核心)
 # ==========================================
