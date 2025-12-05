@@ -27,7 +27,7 @@ def check_password():
     st.markdown("""
     本平台僅開放 **YT 白銀小倉鼠** 以上會員使用。
     
-    請輸入您在 **[YouTube 會員專屬社群貼文](https://www.youtube.com/@HamrLab/community)** 中取得的 **本月通行密碼**。
+    請輸入您在 **[YouTube 會員專屬社群貼文](https://www.youtube.com/@hamr-lab/posts)** 中取得的 **本月通行密碼**。
     """)
 
     st.text_input(
