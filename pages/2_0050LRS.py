@@ -62,11 +62,11 @@ st.markdown(
 
 st.markdown(
     """
-<b>本工具比較三種策略（已改成 CSV 資料，不使用 yfinance）：</b><br>
+<b>本工具比較三種策略：</b><br>
 1️⃣ 原型 ETF Buy & Hold（0050 / 006208）<br>
 2️⃣ 槓桿 ETF Buy & Hold（00631L / 00663L / 00675L / 00685L）<br>
 3️⃣ 槓桿 ETF LRS（訊號來自原型 ETF 的 200 日 SMA，實際進出槓桿 ETF）<br>
-<small>（資料來自 GitHub Actions 自動更新的 CSV）</small>
+
 """,
     unsafe_allow_html=True,
 )
